@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1033669882029",
+    "project_id": "zeiterfassung-ebafa",
+    "storage_bucket": "zeiterfassung-ebafa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1033669882029:android:ae0373c609fe0b8dc4d624",
+        "android_client_info": {
+          "package_name": "com.example.zeiterfassung_terminal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAiwHpv45V6roPTyfq8kio3hbKSkoxBTxk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

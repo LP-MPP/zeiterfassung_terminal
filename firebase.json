@@ -1,0 +1,36 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "zeiterfassung-ebafa",
+          "appId": "1:1033669882029:android:ae0373c609fe0b8dc4d624",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "zeiterfassung-ebafa",
+          "configurations": {
+            "android": "1:1033669882029:android:ae0373c609fe0b8dc4d624",
+            "web": "1:1033669882029:web:0c3c503c37e65247c4d624"
+          }
+        }
+      }
+    }
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}
