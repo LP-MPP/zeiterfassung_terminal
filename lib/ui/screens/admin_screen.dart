@@ -1,10 +1,10 @@
-import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/security.dart';
 import '../../data/store.dart';
 
 class AdminScreen extends StatefulWidget {
@@ -19,7 +19,7 @@ class _AdminScreenState extends State<AdminScreen> {
 
   String? _selectedEmployeeId;
   late DateTime _month; // local month anchor (1st day)
-
+  final Map<String, Map<String, dynamic>> _optimisticOverrides = {};
   @override
   void initState() {
     super.initState();
@@ -44,8 +44,46 @@ class _AdminScreenState extends State<AdminScreen> {
     Navigator.of(context).pop();
   }
 
-  void _prevMonth() => setState(() => _month = DateTime(_month.year, _month.month - 1, 1));
-  void _nextMonth() => setState(() => _month = DateTime(_month.year, _month.month + 1, 1));
+  void _showAdminInfo() {
+    final app = Firebase.app();
+    final user = FirebaseAuth.instance.currentUser;
+
+    final lines = <String>[
+      'Firebase projectId: ${app.options.projectId}',
+      'Firebase app: ${app.name}',
+      'Auth uid: ${user?.uid ?? "(none)"}',
+      'Auth email: ${user?.email ?? "(none)"}',
+      'Anonymous: ${user?.isAnonymous ?? true}',
+      'Providers: ${user?.providerData.map((p) => p.providerId).toList()}',
+      'kIsWeb: $kIsWeb',
+      'kReleaseMode: $kReleaseMode',
+    ];
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Admin – Debug Info'),
+        content: SelectableText(lines.join('\n')),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Schließen')),
+        ],
+      ),
+    );
+  }
+
+  void _prevMonth() {
+    setState(() {
+      _optimisticOverrides.clear();
+      _month = DateTime(_month.year, _month.month - 1, 1);
+    });
+  }
+
+  void _nextMonth() {
+    setState(() {
+      _optimisticOverrides.clear();
+      _month = DateTime(_month.year, _month.month + 1, 1);
+    });
+  }
 
   String _monthLabel(DateTime m) {
     const names = [
@@ -98,11 +136,7 @@ class _AdminScreenState extends State<AdminScreen> {
 
   // ---------------- Employees (Create/Edit) ----------------
 
-  String _hashPin(String employeeId, String pin) {
-    // Must match tool/hash_pin.dart (employeeId + ':' + pin) SHA-256
-    final bytes = utf8.encode('$employeeId:$pin');
-    return sha256.convert(bytes).toString();
-  }
+  String _hashPin(String employeeId, String pin) => hashPin(employeeId, pin);
 
   Future<void> _showEmployeeDialog({Employee? existing}) async {
     final isEdit = existing != null;
@@ -274,16 +308,24 @@ class _AdminScreenState extends State<AdminScreen> {
     final startKey = _dayKeyLocal(_startOfMonthLocal(month));
     final endKey = _dayKeyLocal(_endOfMonthLocal(month));
 
-    final q = _overridesCol
-        .where('employeeId', isEqualTo: employeeId)
-        .where('dayKey', isGreaterThanOrEqualTo: startKey)
-        .where('dayKey', isLessThan: endKey);
+    final q = _overridesCol.where('employeeId', isEqualTo: employeeId);
 
     return q.snapshots().map((snap) {
       final map = <String, Map<String, dynamic>>{};
       for (final doc in snap.docs) {
         final d = doc.data();
-        final dk = (d['dayKey'] ?? doc.id).toString();
+
+        // Normalize key to pure dayKey (YYYY-MM-DD) so UI lookup always matches
+        // even if `dayKey` field is missing or doc.id is `${employeeId}_${dayKey}`.
+        final dkField = d['dayKey']?.toString();
+        final dk = (dkField != null && dkField.isNotEmpty)
+            ? dkField
+            : (doc.id.contains('_') ? doc.id.split('_').last : doc.id);
+
+        // Filter month client-side to avoid requiring composite index on
+        // (employeeId, dayKey range) in hosted web environments.
+        if (dk.compareTo(startKey) < 0 || dk.compareTo(endKey) >= 0) continue;
+
         map[dk] = d;
       }
       return map;
@@ -585,23 +627,41 @@ class _AdminScreenState extends State<AdminScreen> {
 
     await overrideDoc.set(payload, SetOptions(merge: true));
 
-    await _auditCol.add({
-      'action': 'DAY_OVERRIDE_SET',
-      'employeeId': employeeId,
-      'dayKey': dayKey,
-      'reason': reason,
-      'adminUid': adminUid,
-      'createdAt': FieldValue.serverTimestamp(),
-      'payload': {
-        'inUtcMs': payload['inUtcMs'],
-        'outUtcMs': payload['outUtcMs'],
-        'breakStartUtcMs': payload['breakStartUtcMs'],
-        'breakEndUtcMs': payload['breakEndUtcMs'],
-      },
-    });
+await _auditCol.add({
+  'action': 'DAY_OVERRIDE_SET',
+  'employeeId': employeeId,
+  'dayKey': dayKey,
+  'reason': reason,
+  'adminUid': adminUid,
+  'createdAt': FieldValue.serverTimestamp(),
+  'payload': {
+    'inUtcMs': payload['inUtcMs'],
+    'outUtcMs': payload['outUtcMs'],
+    'breakStartUtcMs': payload['breakStartUtcMs'],
+    'breakEndUtcMs': payload['breakEndUtcMs'],
+  },
+});
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Override gespeichert ($dayKey).')));
+// 🔹 Optimistic UI: sofort lokal setzen, unabhängig vom Snapshot-Timing
+_optimisticOverrides[dayKey] = {
+  'employeeId': employeeId,
+  'dayKey': dayKey,
+  'inUtcMs': payload['inUtcMs'],
+  'outUtcMs': payload['outUtcMs'],
+  'breakStartUtcMs': payload['breakStartUtcMs'],
+  'breakEndUtcMs': payload['breakEndUtcMs'],
+  'reason': reason,
+  'adminUid': adminUid,
+};
+
+if (!mounted) return;
+
+// 🔹 Rebuild erzwingen, damit der Tag sofort aktualisiert wird
+setState(() {});
+
+ScaffoldMessenger.of(context).showSnackBar(
+  SnackBar(content: Text('Override gespeichert ($dayKey).')),
+);
   }
 
   @override
@@ -617,6 +677,11 @@ class _AdminScreenState extends State<AdminScreen> {
       appBar: AppBar(
         title: const Text('Admin – Übersicht & Korrektur'),
         actions: [
+          IconButton(
+            tooltip: 'Info',
+            onPressed: _showAdminInfo,
+            icon: const Icon(Icons.info_outline),
+          ),
           IconButton(
             tooltip: 'Abmelden',
             onPressed: _logoutAdmin,
@@ -698,7 +763,10 @@ class _AdminScreenState extends State<AdminScreen> {
                   final e = emps[i];
                   final isSel = e.id == selectedId;
                   return InkWell(
-                    onTap: () => setState(() => _selectedEmployeeId = e.id),
+                    onTap: () => setState(() {
+                      _optimisticOverrides.clear();
+                      _selectedEmployeeId = e.id;
+                    }),
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -784,7 +852,15 @@ class _AdminScreenState extends State<AdminScreen> {
                   return StreamBuilder<Map<String, Map<String, dynamic>>>(
                     stream: _watchOverridesForMonth(employeeId, _month),
                     builder: (context, ovSnap) {
-                      final overrides = ovSnap.data ?? const <String, Map<String, dynamic>>{};
+                      // If the overrides query errors on hosted web (index/rules),
+                      // keep showing optimistic overrides and surface the error.
+                      final overridesFromDb = ovSnap.hasData
+                          ? ovSnap.data!
+                          : const <String, Map<String, dynamic>>{};
+
+                      final overrides = <String, Map<String, dynamic>>{};
+                      overrides.addAll(overridesFromDb);
+                      overrides.addAll(_optimisticOverrides); // lokale Änderungen haben Vorrang
 
                       final start = _startOfMonthLocal(_month);
                       final end = _endOfMonthLocal(_month);
@@ -804,8 +880,34 @@ class _AdminScreenState extends State<AdminScreen> {
                         return _DayRow(dayLocal: day, dayKey: dk, summary: summary, override: ov, autoDayEvents: autoDayEvents);
                       }).toList();
 
+                      final overrideError = ovSnap.hasError ? ovSnap.error.toString() : null;
+
                       return Column(
                         children: [
+                          if (overrideError != null) ...[
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                color: Colors.red.withOpacity(0.08),
+                                border: Border.all(color: Colors.red.withOpacity(0.25)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.error_outline),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Overrides-Query Fehler: $overrideError',
+                                      style: const TextStyle(fontWeight: FontWeight.w800),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
                           _monthTotalsCard(totalNet, overrides.length, monthEvents.length),
                           const SizedBox(height: 10),
                           Expanded(

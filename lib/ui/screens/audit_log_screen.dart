@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -11,15 +12,13 @@ class AuditLogScreen extends StatefulWidget {
 }
 
 class _AuditLogScreenState extends State<AuditLogScreen> {
-  final _store = InMemoryStore.instance;
+  final _db = FirebaseFirestore.instance;
 
   String _query = '';
   bool _onlyAdminEdits = true;
 
   @override
   Widget build(BuildContext context) {
-    final items = _loadItems();
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Audit-Log'),
@@ -34,13 +33,30 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                 _filters(),
                 const SizedBox(height: 12),
                 Expanded(
-                  child: items.isEmpty
-                      ? _card(child: const Text('Keine Audit-Einträge gefunden.'))
-                      : ListView.separated(
-                          itemCount: items.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 10),
-                          itemBuilder: (_, i) => _auditRow(items[i]),
-                        ),
+                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: _db.collection('events').orderBy('timestampUtcMs', descending: true).snapshots(),
+                    builder: (context, snap) {
+                      if (snap.hasError) {
+                        return _card(child: Text('Fehler beim Laden: ${snap.error}'));
+                      }
+                      if (!snap.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      final events = snap.data!.docs.map(TimeEvent.fromDoc).toList();
+                      final items = _loadItems(events);
+
+                      if (items.isEmpty) {
+                        return _card(child: const Text('Keine Audit-Einträge gefunden.'));
+                      }
+
+                      return ListView.separated(
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (_, i) => _auditRow(items[i]),
+                      );
+                    },
+                  ),
                 ),
               ],
             ),
@@ -106,24 +122,20 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
   //
   // Falls dein Store die Liste anders benannt hat, passe _store.events entsprechend an.
 
-  List<dynamic> _loadItems() {
-    // Reverse sort: neueste zuerst
-    final all = List<dynamic>.from(_store.events);
-    all.sort((a, b) => (b.timestampUtcMs as int).compareTo(a.timestampUtcMs as int));
-
-    Iterable<dynamic> it = all;
+  List<TimeEvent> _loadItems(List<TimeEvent> all) {
+    Iterable<TimeEvent> it = all;
 
     if (_onlyAdminEdits) {
-      it = it.where((e) => (e.source ?? '') == 'ADMIN' || (e.terminalId ?? '') == 'ADMIN');
+      it = it.where((e) => e.source == 'ADMIN' || e.terminalId == 'ADMIN');
     }
 
     if (_query.isNotEmpty) {
       it = it.where((e) {
-        final emp = (e.employeeId ?? '').toString().toLowerCase();
-        final type = (e.eventType ?? '').toString().toLowerCase();
-        final note = (e.note ?? '').toString().toLowerCase();
+        final emp = e.employeeId.toLowerCase();
+        final type = e.eventType.toLowerCase();
+        final note = (e.note ?? '').toLowerCase();
         final day = DateFormat('yyyy-MM-dd').format(
-          DateTime.fromMillisecondsSinceEpoch(e.timestampUtcMs as int, isUtc: true).toLocal(),
+          DateTime.fromMillisecondsSinceEpoch(e.timestampUtcMs, isUtc: true).toLocal(),
         );
         final hay = '$emp $type $note $day';
         return hay.contains(_query);
@@ -131,17 +143,17 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
     }
 
     return it.toList();
-    }
+  }
 
-  Widget _auditRow(dynamic e) {
-    final local = DateTime.fromMillisecondsSinceEpoch(e.timestampUtcMs as int, isUtc: true).toLocal();
+  Widget _auditRow(TimeEvent e) {
+    final local = DateTime.fromMillisecondsSinceEpoch(e.timestampUtcMs, isUtc: true).toLocal();
     final ts = DateFormat('dd.MM.yyyy HH:mm:ss').format(local);
 
-    final emp = (e.employeeId ?? '').toString();
-    final type = (e.eventType ?? '').toString();
-    final src = (e.source ?? '').toString();
-    final term = (e.terminalId ?? '').toString();
-    final note = (e.note ?? '').toString();
+    final emp = e.employeeId;
+    final type = e.eventType;
+    final src = e.source;
+    final term = e.terminalId;
+    final note = e.note ?? '';
 
     return _card(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),

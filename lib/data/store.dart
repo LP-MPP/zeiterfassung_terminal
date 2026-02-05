@@ -111,7 +111,13 @@ class InMemoryStore {
   /// because PunchScreen now loads employees directly from Firestore.
   Future<void> init({bool listenEmployees = true, bool listenEvents = true}) async {
     if (listenEmployees && !_empInit) {
-      _empSub = _empCol.snapshots().listen((snap) {
+      _empSub = _empCol.snapshots(includeMetadataChanges: true).listen((snap) {
+        // On web, Firestore can emit an initial empty snapshot from cache.
+        // Avoid clearing already-loaded data which would cause UI flicker.
+        if (snap.metadata.isFromCache && snap.docs.isEmpty && employees.isNotEmpty) {
+          return;
+        }
+
         final next = <String, Employee>{};
         for (final doc in snap.docs) {
           final e = Employee.fromDoc(doc);
@@ -125,7 +131,16 @@ class InMemoryStore {
     }
 
     if (listenEvents && !_eventsInit) {
-      _eventsSub = _evCol.orderBy('timestampUtcMs', descending: false).snapshots().listen((snap) {
+      _eventsSub = _evCol
+          .orderBy('timestampUtcMs', descending: false)
+          .snapshots(includeMetadataChanges: true)
+          .listen((snap) {
+        // On web, Firestore can emit an initial empty snapshot from cache.
+        // Avoid clearing already-loaded data which would cause UI flicker.
+        if (snap.metadata.isFromCache && snap.docs.isEmpty && events.isNotEmpty) {
+          return;
+        }
+
         final next = <TimeEvent>[];
         for (final doc in snap.docs) {
           next.add(TimeEvent.fromDoc(doc));
@@ -191,14 +206,14 @@ class InMemoryStore {
   // ---------------- Events ----------------
 
   /// Creates an event at "now" (UTC). Append-only.
-  TimeEvent addEvent({
+  Future<TimeEvent> addEvent({
     required String employeeId,
     required String eventType,
     required String terminalId,
     required String source, // "PIN" or "ADMIN"
     String? note,
     String? adminUid, // set when source == "ADMIN"
-  }) {
+  }) async {
     final utcMs = DateTime.now().toUtc().millisecondsSinceEpoch;
     final doc = _evCol.doc();
     final ev = TimeEvent(
@@ -211,12 +226,12 @@ class InMemoryStore {
       note: note,
       adminUid: adminUid,
     );
-    doc.set(ev.toMap());
+    await doc.set(ev.toMap());
     return ev;
   }
 
   /// Creates an event at explicit UTC timestamp. Append-only. Used for admin corrections.
-  TimeEvent addEventAt({
+  Future<TimeEvent> addEventAt({
     required String employeeId,
     required String eventType,
     required int timestampUtcMs,
@@ -224,7 +239,7 @@ class InMemoryStore {
     required String source, // "PIN" or "ADMIN"
     String? note,
     String? adminUid, // set when source == "ADMIN"
-  }) {
+  }) async {
     final doc = _evCol.doc();
     final ev = TimeEvent(
       id: doc.id,
@@ -236,7 +251,7 @@ class InMemoryStore {
       note: note,
       adminUid: adminUid,
     );
-    doc.set(ev.toMap());
+    await doc.set(ev.toMap());
     return ev;
   }
 

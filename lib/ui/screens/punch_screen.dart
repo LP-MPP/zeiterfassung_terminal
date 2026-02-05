@@ -1,14 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/constants.dart';
 import '../../core/rules.dart';
+import '../../core/security.dart';
 import '../../data/store.dart';
 import '../widgets/banner.dart';
 import '../widgets/clock_header.dart';
@@ -220,11 +219,8 @@ class _PunchScreenState extends State<PunchScreen> {
 
   String _normId(String? id) => (id ?? '').trim().toUpperCase();
 
-  String _hashPinLocal(String employeeId, String pin) {
-    // Must match admin_screen.dart and tool/hash_pin.dart: sha256("EMPID:PIN")
-    final bytes = utf8.encode('${_normId(employeeId)}:${pin.trim()}');
-    return sha256.convert(bytes).toString();
-  }
+  String _hashPinLocal(String employeeId, String pin) =>
+      hashPin(_normId(employeeId), pin.trim());
 
   void _logout({bool keepBanner = false}) {
     _stopAutoLogoutTimer();
@@ -350,7 +346,7 @@ class _PunchScreenState extends State<PunchScreen> {
         throw StateError('Aktion nicht zulässig (letztes Event: ${last ?? "—"}).');
       }
 
-      final ev = _store.addEvent(
+      final ev = await _store.addEvent(
         employeeId: _employeeId!,
         eventType: eventType,
         terminalId: terminalId,

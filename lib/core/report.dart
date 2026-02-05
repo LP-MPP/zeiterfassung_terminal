@@ -76,9 +76,12 @@ List<DailyReportRow> _buildDailyRows({
   required int year,
   required int month,
 }) {
-  // UTC month range; day grouping is LOCAL
-  final fromUtc = DateTime.utc(year, month, 1);
-  final toUtc = DateTime.utc(year, month + 1, 1);
+  // Use local month boundaries and convert them to UTC for range queries.
+  // This keeps filtering consistent with the local-day grouping below.
+  final fromLocal = DateTime(year, month, 1);
+  final toLocal = DateTime(year, month + 1, 1);
+  final fromUtc = fromLocal.toUtc();
+  final toUtc = toLocal.toUtc();
   final events = store.eventsInRangeUtc(
     fromUtc.millisecondsSinceEpoch,
     toUtc.millisecondsSinceEpoch,
@@ -150,11 +153,12 @@ List<DailyReportRow> _buildDailyRows({
             break;
 
           case 'BREAK_END':
-            if (breakStartAt == null) {
+            final openBreakAt = breakStartAt;
+            if (openBreakAt == null) {
               flags.add('BREAK_END_WITHOUT_START');
               break;
             }
-            final mins = _minutesBetween(breakStartAt!, tLocal);
+            final mins = _minutesBetween(openBreakAt, tLocal);
             if (mins < 0) {
               flags.add('BREAK_NEGATIVE_TIME');
             } else {
@@ -170,14 +174,16 @@ List<DailyReportRow> _buildDailyRows({
             }
 
             // open break -> close at OUT
-            if (breakStartAt != null) {
+            final openBreakAt = breakStartAt;
+            if (openBreakAt != null) {
               flags.add('BREAK_NOT_ENDED');
-              final mins = _minutesBetween(breakStartAt!, tLocal);
+              final mins = _minutesBetween(openBreakAt, tLocal);
               if (mins >= 0) breakMinutes += mins;
               breakStartAt = null;
             }
 
-            final mins = _minutesBetween(inAt!, tLocal);
+            final inStartAt = inAt;
+            final mins = _minutesBetween(inStartAt, tLocal);
             if (mins < 0) {
               flags.add('WORK_NEGATIVE_TIME');
             } else {

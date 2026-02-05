@@ -97,12 +97,12 @@ class _EmployeeMonthScreenState extends State<EmployeeMonthScreen> {
       final reason = res.reason.trim();
       final dayStr = DateFormat('yyyy-MM-dd').format(r.dayLocal);
 
-      void addIfSelected(String eventType, TimeOfDay? t) {
+      Future<void> addIfSelected(String eventType, TimeOfDay? t) async {
         if (t == null) return;
         final local = DateTime(r.dayLocal.year, r.dayLocal.month, r.dayLocal.day, t.hour, t.minute);
 
         // Rechtssicher: nur zusätzliche Events, nichts löschen/überschreiben.
-        _store.addEventAt(
+        await _store.addEventAt(
           employeeId: r.employeeId,
           eventType: eventType,
           timestampUtcMs: local.toUtc().millisecondsSinceEpoch,
@@ -112,10 +112,10 @@ class _EmployeeMonthScreenState extends State<EmployeeMonthScreen> {
         );
       }
 
-      addIfSelected('IN', res.inTime);
-      addIfSelected('BREAK_START', res.breakStartTime);
-      addIfSelected('BREAK_END', res.breakEndTime);
-      addIfSelected('OUT', res.outTime);
+      await addIfSelected('IN', res.inTime);
+      await addIfSelected('BREAK_START', res.breakStartTime);
+      await addIfSelected('BREAK_END', res.breakEndTime);
+      await addIfSelected('OUT', res.outTime);
 
       setState(() {
         _msg = 'Korrektur gespeichert: ${DateFormat('dd.MM.yyyy').format(r.dayLocal)}';

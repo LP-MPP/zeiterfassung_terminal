@@ -1,5 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import '../../core/constants.dart';
 
 class AdminPinDialog extends StatefulWidget {
   const AdminPinDialog({super.key});
@@ -11,6 +11,7 @@ class AdminPinDialog extends StatefulWidget {
 class _AdminPinDialogState extends State<AdminPinDialog> {
   final _ctrl = TextEditingController();
   String? _err;
+  bool _busy = false;
 
   @override
   void dispose() {
@@ -18,12 +19,49 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
     super.dispose();
   }
 
-  void _check() {
+  Future<void> _check() async {
     final pin = _ctrl.text.trim();
-    if (pin == adminPin) {
-      Navigator.of(context).pop(true);
-    } else {
-      setState(() => _err = 'Admin-PIN falsch.');
+    if (pin.isEmpty) {
+      setState(() => _err = 'PIN eingeben.');
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _err = null;
+    });
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('config')
+          .doc('terminal')
+          .get();
+      final storedPin = doc.data()?['adminPin'] as String?;
+
+      if (!mounted) return;
+
+      if (storedPin == null) {
+        setState(() {
+          _busy = false;
+          _err = 'Admin-PIN nicht konfiguriert (config/terminal.adminPin fehlt).';
+        });
+        return;
+      }
+
+      if (pin == storedPin) {
+        Navigator.of(context).pop(true);
+      } else {
+        setState(() {
+          _busy = false;
+          _err = 'Admin-PIN falsch.';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _err = 'Fehler beim Laden der PIN: $e';
+      });
     }
   }
 
@@ -43,6 +81,7 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
             obscureText: true,
             keyboardType: TextInputType.number,
             onSubmitted: (_) => _check(),
+            enabled: !_busy,
           ),
           if (_err != null) ...[
             const SizedBox(height: 8),
@@ -51,8 +90,16 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Abbrechen')),
-        FilledButton(onPressed: _check, child: const Text('OK')),
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Abbrechen'),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _check,
+          child: _busy
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('OK'),
+        ),
       ],
     );
   }
