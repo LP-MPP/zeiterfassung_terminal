@@ -666,6 +666,7 @@ ScaffoldMessenger.of(context).showSnackBar(
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || user.isAnonymous) {
       return const Scaffold(body: Center(child: Text('Kein Admin-Login.')));
@@ -689,37 +690,46 @@ ScaffoldMessenger.of(context).showSnackBar(
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: employeesStream,
-        builder: (context, snap) {
-          if (snap.hasError) return Center(child: Text('Fehler: ${snap.error}'));
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [cs.primary.withValues(alpha: 0.08), cs.surface, cs.surface],
+          ),
+        ),
+        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: employeesStream,
+          builder: (context, snap) {
+            if (snap.hasError) return Center(child: Text('Fehler: ${snap.error}'));
+            if (!snap.hasData) return const Center(child: CircularProgressIndicator());
 
-          final emps = snap.data!.docs.map(Employee.fromDoc).toList()..sort((a, b) => a.id.compareTo(b.id));
+            final emps = snap.data!.docs.map(Employee.fromDoc).toList()..sort((a, b) => a.id.compareTo(b.id));
 
-          if (emps.isNotEmpty && (_selectedEmployeeId == null || !emps.any((e) => e.id == _selectedEmployeeId))) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              setState(() => _selectedEmployeeId = emps.first.id);
-            });
-          }
+            if (emps.isNotEmpty && (_selectedEmployeeId == null || !emps.any((e) => e.id == _selectedEmployeeId))) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                setState(() => _selectedEmployeeId = emps.first.id);
+              });
+            }
 
-          final selId = _selectedEmployeeId;
-          final selEmp = (selId == null) ? null : emps.where((e) => e.id == selId).cast<Employee?>().first;
+            final selId = _selectedEmployeeId;
+            final selEmp = (selId == null) ? null : emps.where((e) => e.id == selId).cast<Employee?>().first;
 
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                SizedBox(width: 320, child: _employeePane(emps, selId)),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: (selEmp == null) ? const Center(child: Text('Bitte Mitarbeiter auswählen.')) : _monthPane(selEmp),
-                ),
-              ],
-            ),
-          );
-        },
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  SizedBox(width: 320, child: _employeePane(emps, selId)),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: (selEmp == null) ? const Center(child: Text('Bitte Mitarbeiter auswählen.')) : _monthPane(selEmp),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -772,8 +782,12 @@ ScaffoldMessenger.of(context).showSnackBar(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.black.withOpacity(isSel ? 0.35 : 0.12)),
-                        color: isSel ? Colors.black.withOpacity(0.06) : null,
+                        border: Border.all(
+                          color: isSel
+                              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)
+                              : Theme.of(context).colorScheme.outlineVariant,
+                        ),
+                        color: isSel ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08) : null,
                       ),
                       child: Row(
                         children: [
@@ -785,7 +799,10 @@ ScaffoldMessenger.of(context).showSnackBar(
                                 const SizedBox(height: 2),
                                 Text(
                                   e.id,
-                                  style: TextStyle(color: Colors.black.withOpacity(0.6), fontWeight: FontWeight.w700),
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ],
                             ),
@@ -809,12 +826,15 @@ ScaffoldMessenger.of(context).showSnackBar(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        color: ok ? Colors.green.withOpacity(0.12) : Colors.red.withOpacity(0.12),
-        border: Border.all(color: ok ? Colors.green.withOpacity(0.35) : Colors.red.withOpacity(0.35)),
+        color: ok ? const Color(0xFFEAF8F2) : const Color(0xFFFCEEF0),
+        border: Border.all(color: ok ? const Color(0xFF96D8BF) : const Color(0xFFE9A7AE)),
       ),
       child: Text(
         text,
-        style: TextStyle(fontWeight: FontWeight.w900, color: ok ? Colors.green.shade800 : Colors.red.shade800),
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          color: ok ? const Color(0xFF0D6B52) : const Color(0xFF9B2E35),
+        ),
       ),
     );
   }
@@ -830,7 +850,23 @@ ScaffoldMessenger.of(context).showSnackBar(
             Row(
               children: [
                 Expanded(
-                  child: Text('${emp.name} (${emp.id})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${emp.name} (${emp.id})',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Monatsübersicht und Korrekturen',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 IconButton(tooltip: 'Vorheriger Monat', onPressed: _prevMonth, icon: const Icon(Icons.chevron_left)),
                 Text(_monthLabel(_month), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
@@ -890,8 +926,8 @@ ScaffoldMessenger.of(context).showSnackBar(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(12),
-                                color: Colors.red.withOpacity(0.08),
-                                border: Border.all(color: Colors.red.withOpacity(0.25)),
+                                color: const Color(0xFFFCEEF0),
+                                border: Border.all(color: const Color(0xFFE9A7AE)),
                               ),
                               child: Row(
                                 children: [
@@ -936,8 +972,8 @@ ScaffoldMessenger.of(context).showSnackBar(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        color: Colors.black.withOpacity(0.04),
-        border: Border.all(color: Colors.black.withOpacity(0.10)),
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.06),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: Row(
         children: [
@@ -949,7 +985,10 @@ ScaffoldMessenger.of(context).showSnackBar(
           ),
           Text(
             'Events: $eventCount · Overrides: $overrideCount',
-            style: TextStyle(color: Colors.black.withOpacity(0.65), fontWeight: FontWeight.w800),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),
@@ -968,7 +1007,7 @@ ScaffoldMessenger.of(context).showSnackBar(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black.withOpacity(0.12)),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: Row(
         children: [
@@ -983,21 +1022,24 @@ ScaffoldMessenger.of(context).showSnackBar(
                   s.sourceLabel == 'ADMIN' ? 'ADMIN' : 'AUTO',
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
-                    color: s.sourceLabel == 'ADMIN' ? Colors.blueGrey.shade700 : Colors.black.withOpacity(0.55),
+                    color: s.sourceLabel == 'ADMIN'
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
                   ),
                 ),
               ],
             ),
           ),
           Expanded(
-            child: Wrap(
-              spacing: 14,
-              runSpacing: 8,
+            child: Row(
               children: [
-                _kv('Kommen', _hhmm(s.inTime)),
-                _kv('Gehen', _hhmm(s.outTime)),
-                _kv('Pause', '${_hhmm(s.breakStart)}–${_hhmm(s.breakEnd)}'),
-                _kv('Netto', '${_durHHMM(s.net)} h'),
+                Expanded(child: _kv('Kommen', _hhmm(s.inTime))),
+                const SizedBox(width: 8),
+                Expanded(child: _kv('Gehen', _hhmm(s.outTime))),
+                const SizedBox(width: 8),
+                Expanded(child: _kv('Pause', '${_hhmm(s.breakStart)}–${_hhmm(s.breakEnd)}')),
+                const SizedBox(width: 8),
+                Expanded(child: _kv('Netto', '${_durHHMM(s.net)} h')),
               ],
             ),
           ),
@@ -1013,14 +1055,30 @@ ScaffoldMessenger.of(context).showSnackBar(
   }
 
   Widget _kv(String k, String v) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(k, style: TextStyle(color: Colors.black.withOpacity(0.55), fontWeight: FontWeight.w800)),
-        const SizedBox(height: 2),
-        Text(v, style: const TextStyle(fontWeight: FontWeight.w900)),
-      ],
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        color: cs.primary.withValues(alpha: 0.04),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            k,
+            style: TextStyle(
+              color: cs.onSurface.withValues(alpha: 0.62),
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(v, style: const TextStyle(fontWeight: FontWeight.w900)),
+        ],
+      ),
     );
   }
 }

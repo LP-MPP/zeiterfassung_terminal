@@ -12,17 +12,20 @@ class InfoBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final Color border;
     final Color bg;
+    final Color textColor;
     final IconData icon;
 
     switch (kind) {
       case BannerKind.success:
-        border = Colors.green.shade700;
-        bg = Colors.green.withOpacity(0.12);
+        border = const Color(0xFF0D6B52);
+        bg = const Color(0xFFEAF8F2);
+        textColor = const Color(0xFF0A4C3A);
         icon = Icons.check_circle;
         break;
       case BannerKind.error:
-        border = Colors.red.shade700;
-        bg = Colors.red.withOpacity(0.12);
+        border = const Color(0xFF9B2E35);
+        bg = const Color(0xFFFCEEF0);
+        textColor = const Color(0xFF5D1A22);
         icon = Icons.error;
         break;
     }
@@ -40,7 +43,12 @@ class InfoBanner extends StatelessWidget {
         children: [
           Icon(icon, color: border),
           const SizedBox(width: 10),
-          Expanded(child: Text(text)),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: textColor, fontWeight: FontWeight.w700),
+            ),
+          ),
         ],
       ),
     );

@@ -19,46 +19,56 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Audit-Log'),
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 980),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                _filters(),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: _db.collection('events').orderBy('timestampUtcMs', descending: true).snapshots(),
-                    builder: (context, snap) {
-                      if (snap.hasError) {
-                        return _card(child: Text('Fehler beim Laden: ${snap.error}'));
-                      }
-                      if (!snap.hasData) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [cs.primary.withValues(alpha: 0.08), cs.surface, cs.surface],
+          ),
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 980),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _filters(),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: _db.collection('events').orderBy('timestampUtcMs', descending: true).snapshots(),
+                      builder: (context, snap) {
+                        if (snap.hasError) {
+                          return _card(child: Text('Fehler beim Laden: ${snap.error}'));
+                        }
+                        if (!snap.hasData) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
 
-                      final events = snap.data!.docs.map(TimeEvent.fromDoc).toList();
-                      final items = _loadItems(events);
+                        final events = snap.data!.docs.map(TimeEvent.fromDoc).toList();
+                        final items = _loadItems(events);
 
-                      if (items.isEmpty) {
-                        return _card(child: const Text('Keine Audit-Einträge gefunden.'));
-                      }
+                        if (items.isEmpty) {
+                          return _card(child: const Text('Keine Audit-Einträge gefunden.'));
+                        }
 
-                      return ListView.separated(
-                        itemCount: items.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (_, i) => _auditRow(items[i]),
-                      );
-                    },
+                        return ListView.separated(
+                          itemCount: items.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          itemBuilder: (_, i) => _auditRow(items[i]),
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -69,33 +79,48 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
   Widget _filters() {
     return _card(
       padding: const EdgeInsets.all(14),
-      child: Column(
-        children: [
-          Row(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 760;
+          final search = TextField(
+            decoration: const InputDecoration(
+              labelText: 'Suche (MA-ID, Typ, Reason, Tag)',
+              hintText: 'z. B. E001 oder reason',
+            ),
+            onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+          );
+
+          final adminToggle = Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Suche (MA-ID, Typ, Reason, Tag)',
-                    hintText: 'z. B. E001 oder reason',
-                  ),
-                  onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Row(
-                children: [
-                  const Text('Nur ADMIN', style: TextStyle(fontWeight: FontWeight.w800)),
-                  const SizedBox(width: 8),
-                  Switch(
-                    value: _onlyAdminEdits,
-                    onChanged: (v) => setState(() => _onlyAdminEdits = v),
-                  ),
-                ],
+              const Text('Nur ADMIN', style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(width: 8),
+              Switch(
+                value: _onlyAdminEdits,
+                onChanged: (v) => setState(() => _onlyAdminEdits = v),
               ),
             ],
-          ),
-        ],
+          );
+
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                search,
+                const SizedBox(height: 10),
+                adminToggle,
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(child: search),
+              const SizedBox(width: 12),
+              adminToggle,
+            ],
+          );
+        },
       ),
     );
   }
@@ -104,9 +129,16 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.black.withOpacity(0.06)),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x120C2C54),
+            blurRadius: 16,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: child,
     );
@@ -162,6 +194,20 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
         children: [
           Row(
             children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                ),
+                child: Icon(
+                  Icons.event_note,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   '$emp · $type',
@@ -170,20 +216,34 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
               ),
               Text(
                 ts,
-                style: TextStyle(color: Colors.black.withOpacity(0.55), fontWeight: FontWeight.w700),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 6),
           Text(
             'Quelle: $src · Terminal: $term',
-            style: TextStyle(color: Colors.black.withOpacity(0.55), fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
+              fontWeight: FontWeight.w700,
+            ),
           ),
           if (note.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text(
-              note,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.06),
+                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+              ),
+              child: Text(
+                note,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ],
         ],

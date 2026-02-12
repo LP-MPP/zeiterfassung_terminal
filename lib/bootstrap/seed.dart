@@ -1,6 +1,5 @@
-import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
-import 'db.dart';
+import '../data/db.dart';
 
 enum WorkState { off, working, onBreak }
 

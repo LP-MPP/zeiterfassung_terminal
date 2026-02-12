@@ -1,72 +1,88 @@
 import 'package:flutter/material.dart';
 
 ThemeData buildAppTheme() {
-  const seed = Color(0xFF3A7AFE);
+  const seed = Color(0xFF1E4A86);
+  const surface = Color(0xFFF3F6FB);
+  const surfaceCard = Color(0xFFFFFFFF);
+  const outline = Color(0xFFD8E1EE);
 
-  final base = ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light),
+  final base = ThemeData(useMaterial3: true, colorScheme: ColorScheme.fromSeed(seedColor: seed));
+  final cs = base.colorScheme.copyWith(
+    primary: seed,
+    surface: surface,
+    onSurface: const Color(0xFF10233E),
+    outline: outline,
+    outlineVariant: const Color(0xFFE6ECF5),
   );
 
-  final cs = base.colorScheme;
-
   return base.copyWith(
-    scaffoldBackgroundColor: const Color(0xFFF5F6FA),
+    colorScheme: cs,
+    scaffoldBackgroundColor: surface,
     appBarTheme: AppBarTheme(
-      backgroundColor: const Color(0xFFF5F6FA),
+      backgroundColor: surface,
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
       titleTextStyle: TextStyle(
         color: cs.onSurface,
         fontSize: 18,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.2,
       ),
       iconTheme: IconThemeData(color: cs.onSurface),
     ),
     textTheme: base.textTheme.copyWith(
-      titleLarge: base.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-      titleMedium: base.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+      titleLarge: base.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.2),
+      titleMedium: base.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.1),
     ),
-
-    // FIX: CardThemeData statt CardTheme
     cardTheme: CardThemeData(
-      color: Colors.white.withOpacity(0.92),
+      color: surfaceCard,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: outline, width: 1),
+      ),
       margin: EdgeInsets.zero,
     ),
-
-    dividerTheme: DividerThemeData(color: cs.outlineVariant.withOpacity(0.7)),
+    dividerTheme: DividerThemeData(color: cs.outlineVariant),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
+        backgroundColor: cs.primary,
+        foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: -0.1),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
+        foregroundColor: cs.onSurface,
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        side: BorderSide(color: cs.outlineVariant),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        side: BorderSide(color: cs.outline),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       ),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: const Color(0xFF142E53),
+      contentTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: Colors.white.withOpacity(0.92),
+      fillColor: surfaceCard,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: cs.outlineVariant),
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: cs.outline),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: cs.outlineVariant),
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: cs.outline),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: cs.primary.withOpacity(0.7), width: 1.4),
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: cs.primary, width: 1.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
     ),

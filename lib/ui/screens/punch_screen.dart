@@ -420,12 +420,20 @@ class _PunchScreenState extends State<PunchScreen> {
   // -------------------------
 
   Widget _card({required Widget child, EdgeInsets padding = const EdgeInsets.all(16)}) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cs.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.black.withOpacity(0.06)),
+        border: Border.all(color: cs.outlineVariant),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x150C2C54),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: child,
     );
@@ -456,6 +464,7 @@ class _PunchScreenState extends State<PunchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final mq = MediaQuery.of(context);
 
     final state = stateFromLastEvent(_lastEventType);
@@ -473,67 +482,102 @@ class _PunchScreenState extends State<PunchScreen> {
           title: const Text('Terminal'),
           // Admin button removed: admin entry is handled by TerminalShell long-press.
         ),
-        body: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: _touch,
-          child: Stack(
-            children: [
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 980),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      children: [
+        body: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                cs.primary.withValues(alpha: 0.08),
+                cs.surface,
+                cs.surface,
+              ],
+            ),
+          ),
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: _touch,
+            child: Stack(
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 980),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        children: [
                         _card(
                           padding: EdgeInsets.fromLTRB(16, _isCompact(context) ? 12 : 16, 16, 12),
                           child: Column(
                             children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(999),
+                                      color: cs.primary.withValues(alpha: 0.1),
+                                      border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
+                                    ),
+                                    child: Text(
+                                      'SICHERER TERMINALMODUS',
+                                      style: TextStyle(
+                                        color: cs.primary,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.4,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
                               ClockHeader(nowLocal: _now),
                               const SizedBox(height: 8),
                               Text(
                                 'Terminal: $terminalId',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.black.withOpacity(0.55),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: cs.onSurface.withValues(alpha: 0.62),
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        Expanded(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 180),
-                            child: _loggedIn
-                                ? _buildPunchUI(canPunchIn, canPunchOut, canBreakStart, canBreakEnd)
-                                : _buildLoginUI(),
+                          const SizedBox(height: 12),
+                          Expanded(
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              child: _loggedIn
+                                  ? _buildPunchUI(canPunchIn, canPunchOut, canBreakStart, canBreakEnd)
+                                  : _buildLoginUI(),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
 
-              // Idle Overlay (Always-On Look)
-              if (_idle)
-                Positioned.fill(
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 220),
-                    opacity: 1.0,
-                    child: IdleClockScreen(
-                      nowLocal: _now,
-                      onWake: () {
-                        setState(() {
-                          _idle = false;
-                          _lastInteractionLocal = DateTime.now();
-                        });
-                      },
+                // Idle Overlay (Always-On Look)
+                if (_idle)
+                  Positioned.fill(
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 220),
+                      opacity: 1.0,
+                      child: IdleClockScreen(
+                        nowLocal: _now,
+                        onWake: () {
+                          setState(() {
+                            _idle = false;
+                            _lastInteractionLocal = DateTime.now();
+                          });
+                        },
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -607,7 +651,7 @@ class _PunchScreenState extends State<PunchScreen> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           color: Colors.white,
-          border: Border.all(color: Colors.black.withOpacity(0.08)),
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
         ),
         child: Row(
           children: [
@@ -616,7 +660,7 @@ class _PunchScreenState extends State<PunchScreen> {
               height: 40,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                color: Colors.black.withOpacity(0.04),
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
               ),
               child: Center(
                 child: Text(
@@ -638,14 +682,25 @@ class _PunchScreenState extends State<PunchScreen> {
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: -0.2),
                   ),
                   const SizedBox(height: 3),
-                  Text(
-                    e.id,
-                    style: TextStyle(color: Colors.black.withOpacity(0.55), fontWeight: FontWeight.w700),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                    ),
+                    child: Text(
+                      e.id,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: Colors.black.withOpacity(0.25)),
+            Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)),
           ],
         ),
       ),
@@ -675,7 +730,10 @@ class _PunchScreenState extends State<PunchScreen> {
             Text(
               _selectedEmpId ?? '',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black.withOpacity(0.55), fontWeight: FontWeight.w700),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                fontWeight: FontWeight.w700,
+              ),
             ),
             SizedBox(height: compact ? 10 : 14),
 
@@ -709,7 +767,7 @@ class _PunchScreenState extends State<PunchScreen> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         color: Colors.white,
-        border: Border.all(color: Colors.black.withOpacity(0.10)),
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
       ),
       child: Text(
         show,
@@ -804,7 +862,10 @@ class _PunchScreenState extends State<PunchScreen> {
           const SizedBox(height: 6),
           Text(
             'Status: ${_statusText ?? '—'}',
-            style: TextStyle(color: Colors.black.withOpacity(0.55), fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 6),
 
@@ -883,7 +944,8 @@ class _PunchScreenState extends State<PunchScreen> {
     required bool compact,
     required VoidCallback onTap,
   }) {
-    return FilledButton.tonal(
+    final cs = Theme.of(context).colorScheme;
+    return FilledButton(
       onPressed: (_busy || !enabled)
           ? null
           : () {
@@ -891,6 +953,8 @@ class _PunchScreenState extends State<PunchScreen> {
               onTap();
             },
       style: FilledButton.styleFrom(
+        backgroundColor: enabled ? cs.primary : cs.surfaceContainerHighest,
+        foregroundColor: enabled ? Colors.white : cs.onSurface.withValues(alpha: 0.45),
         padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12, vertical: compact ? 10 : 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
