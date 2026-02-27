@@ -21,44 +21,58 @@ class IdleClockScreen extends StatelessWidget {
       onTap: onWake,
       child: Container(
         color: Colors.black,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                time,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 180,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -10,
-                  height: 1,
-                  fontFamily: 'monospace',
-                  color: Colors.white.withOpacity(0.95),
-                ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxHeight < 560;
+            final timeHeight = compact ? 120.0 : 180.0;
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    height: timeHeight,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        time,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: compact ? 128 : 180,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: compact ? -6 : -10,
+                          height: 1,
+                          fontFamily: 'monospace',
+                          color: Colors.white.withValues(alpha: 0.95),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    date,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: compact ? 16 : 24,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.3,
+                      color: Colors.white.withValues(alpha: 0.55),
+                    ),
+                  ),
+                  SizedBox(height: compact ? 10 : 18),
+                  Text(
+                    'Tippen zum Start',
+                    style: TextStyle(
+                      fontSize: compact ? 14 : 18,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white.withValues(alpha: 0.35),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              Text(
-                date,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.3,
-                  color: Colors.white.withOpacity(0.55),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'Tippen zum Start',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white.withOpacity(0.35),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );

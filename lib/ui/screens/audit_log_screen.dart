@@ -32,42 +32,44 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
             colors: [cs.primary.withValues(alpha: 0.08), cs.surface, cs.surface],
           ),
         ),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 980),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _filters(),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                      stream: _db.collection('events').orderBy('timestampUtcMs', descending: true).snapshots(),
-                      builder: (context, snap) {
-                        if (snap.hasError) {
-                          return _card(child: Text('Fehler beim Laden: ${snap.error}'));
-                        }
-                        if (!snap.hasData) {
-                          return const Center(child: CircularProgressIndicator());
-                        }
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 980),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _filters(),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: _db.collection('events').orderBy('timestampUtcMs', descending: true).snapshots(),
+                        builder: (context, snap) {
+                          if (snap.hasError) {
+                            return _card(child: Text('Fehler beim Laden: ${snap.error}'));
+                          }
+                          if (!snap.hasData) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
 
-                        final events = snap.data!.docs.map(TimeEvent.fromDoc).toList();
-                        final items = _loadItems(events);
+                          final events = snap.data!.docs.map(TimeEvent.fromDoc).toList();
+                          final items = _loadItems(events);
 
-                        if (items.isEmpty) {
-                          return _card(child: const Text('Keine Audit-Einträge gefunden.'));
-                        }
+                          if (items.isEmpty) {
+                            return _card(child: const Text('Keine Audit-Einträge gefunden.'));
+                          }
 
-                        return ListView.separated(
-                          itemCount: items.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 10),
-                          itemBuilder: (_, i) => _auditRow(items[i]),
-                        );
-                      },
+                          return ListView.separated(
+                            itemCount: items.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            itemBuilder: (_, i) => _auditRow(items[i]),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

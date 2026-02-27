@@ -11,38 +11,51 @@ class ClockHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final time = DateFormat('HH:mm').format(nowLocal);
     final date = DateFormat('EEEE, dd. MMMM yyyy', 'de_DE').format(nowLocal);
+    final cs = Theme.of(context).colorScheme;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Big, clean, monospace time
-        Text(
-          time,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 92,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -2.8,
-            height: 0.95,
-            fontFamily: 'monospace',
-            color: Colors.black,
-          ),
-        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 720;
+        final timeHeight = compact ? 62.0 : 84.0;
+        final timeStyle = TextStyle(
+          fontSize: compact ? 72 : 92,
+          fontWeight: FontWeight.w900,
+          letterSpacing: compact ? -2.0 : -2.8,
+          height: 0.95,
+          fontFamily: 'monospace',
+          color: cs.onSurface,
+        );
 
-        const SizedBox(height: 10),
-
-        // Subtle date
-        Text(
-          date,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.3,
-            color: Colors.black.withOpacity(0.45),
-          ),
-        ),
-      ],
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: timeHeight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  time,
+                  textAlign: TextAlign.center,
+                  style: timeStyle,
+                ),
+              ),
+            ),
+            SizedBox(height: compact ? 6 : 10),
+            Text(
+              date,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: compact ? 12 : 14,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.3,
+                color: cs.onSurface.withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

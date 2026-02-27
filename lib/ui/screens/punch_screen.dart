@@ -10,7 +10,6 @@ import '../../core/rules.dart';
 import '../../core/security.dart';
 import '../../data/store.dart';
 import '../widgets/banner.dart';
-import '../widgets/clock_header.dart';
 import '../widgets/logout_countdown_chip.dart';
 import 'idle_clock_screen.dart';
 
@@ -462,10 +461,73 @@ class _PunchScreenState extends State<PunchScreen> {
   // Build
   // -------------------------
 
+  Widget _terminalHeader(ColorScheme cs, bool compact) {
+    final time = DateFormat('HH:mm').format(_now);
+    final date = DateFormat('EEE, dd.MM.yyyy', 'de_DE').format(_now);
+
+    return Row(
+      children: [
+        Expanded(
+          flex: 5,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                time,
+                style: TextStyle(
+                  fontSize: compact ? 64 : 78,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: compact ? -1.8 : -2.4,
+                  height: 0.95,
+                  fontFamily: 'monospace',
+                  color: cs.onSurface,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 4,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                date,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: compact ? 12 : 14,
+                  fontWeight: FontWeight.w700,
+                  color: cs.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Terminal: $terminalId',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: cs.onSurface.withValues(alpha: 0.75),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final mq = MediaQuery.of(context);
+    final hideAppBarForSpace = mq.size.height < 780 || mq.orientation == Orientation.landscape;
+    final headerCompact = mq.size.height < 720 || mq.orientation == Orientation.landscape;
 
     final state = stateFromLastEvent(_lastEventType);
     final canPunchIn = isAllowed(state, 'IN');
@@ -476,7 +538,7 @@ class _PunchScreenState extends State<PunchScreen> {
     return MediaQuery(
       data: mq.copyWith(textScaler: const TextScaler.linear(1.0)),
       child: Scaffold(
-        appBar: _idle
+        appBar: (_idle || hideAppBarForSpace)
             ? null
             : AppBar(
           title: const Text('Terminal'),
@@ -494,89 +556,57 @@ class _PunchScreenState extends State<PunchScreen> {
               ],
             ),
           ),
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: _touch,
-            child: Stack(
-              children: [
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 980),
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        children: [
-                        _card(
-                          padding: EdgeInsets.fromLTRB(16, _isCompact(context) ? 12 : 16, 16, 12),
-                          child: Column(
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(999),
-                                      color: cs.primary.withValues(alpha: 0.1),
-                                      border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
-                                    ),
-                                    child: Text(
-                                      'SICHERER TERMINALMODUS',
-                                      style: TextStyle(
-                                        color: cs.primary,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.4,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+          child: SafeArea(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _touch,
+              child: Stack(
+                children: [
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 980),
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(14, hideAppBarForSpace ? 8 : 14, 14, 12),
+                        child: Column(
+                          children: [
+                            _card(
+                              padding: EdgeInsets.fromLTRB(14, headerCompact ? 8 : 12, 14, headerCompact ? 8 : 10),
+                              child: _terminalHeader(cs, headerCompact),
+                            ),
+                            const SizedBox(height: 10),
+                            Expanded(
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 180),
+                                child: _loggedIn
+                                    ? _buildPunchUI(canPunchIn, canPunchOut, canBreakStart, canBreakEnd)
+                                    : _buildLoginUI(),
                               ),
-                              const SizedBox(height: 10),
-                              ClockHeader(nowLocal: _now),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Terminal: $terminalId',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: cs.onSurface.withValues(alpha: 0.62),
-                                  ),
-                                ),
-                              ],
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          Expanded(
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 180),
-                              child: _loggedIn
-                                  ? _buildPunchUI(canPunchIn, canPunchOut, canBreakStart, canBreakEnd)
-                                  : _buildLoginUI(),
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
 
-                // Idle Overlay (Always-On Look)
-                if (_idle)
-                  Positioned.fill(
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 220),
-                      opacity: 1.0,
-                      child: IdleClockScreen(
-                        nowLocal: _now,
-                        onWake: () {
-                          setState(() {
-                            _idle = false;
-                            _lastInteractionLocal = DateTime.now();
-                          });
-                        },
+                  // Idle Overlay (Always-On Look)
+                  if (_idle)
+                    Positioned.fill(
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 220),
+                        opacity: 1.0,
+                        child: IdleClockScreen(
+                          nowLocal: _now,
+                          onWake: () {
+                            setState(() {
+                              _idle = false;
+                              _lastInteractionLocal = DateTime.now();
+                            });
+                          },
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -628,10 +658,10 @@ class _PunchScreenState extends State<PunchScreen> {
 
                 return GridView.count(
                   crossAxisCount: cols,
-                  physics: const NeverScrollableScrollPhysics(),
+                  physics: const BouncingScrollPhysics(),
                   crossAxisSpacing: 10,
                   mainAxisSpacing: 10,
-                  childAspectRatio: 1.9,
+                  childAspectRatio: c.maxHeight < 420 ? 2.4 : 1.9,
                   children: emps.map(_employeeGridTile).toList(),
                 );
               },
@@ -716,44 +746,150 @@ class _PunchScreenState extends State<PunchScreen> {
 
     return KeyedSubtree(
       key: const ValueKey('pin'),
-      child: _card(
-        padding: EdgeInsets.all(compact ? 14 : 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              _selectedEmpName ?? '',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.3),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final veryTightHeight = constraints.maxHeight < 430;
+          final topGap = veryTightHeight ? 6.0 : (compact ? 10.0 : 14.0);
+          final midGap = veryTightHeight ? 6.0 : (compact ? 8.0 : 10.0);
+
+          return _card(
+            padding: EdgeInsets.all(compact ? 14 : 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  _selectedEmpName ?? '',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.3),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _selectedEmpId ?? '',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: topGap),
+
+                _pinDisplay(compact: compact),
+                SizedBox(height: midGap),
+
+                if (_error != null) InfoBanner(text: _error!, kind: BannerKind.error),
+
+                SizedBox(height: midGap),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, keypadConstraints) {
+                      return _pinKeypad4(
+                        compact: compact,
+                        maxHeight: keypadConstraints.maxHeight,
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _backToEmployeePick,
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Zurück'),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              _selectedEmpId ?? '',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            SizedBox(height: compact ? 10 : 14),
-
-            _pinDisplay(compact: compact),
-            SizedBox(height: compact ? 8 : 10),
-
-            if (_error != null) InfoBanner(text: _error!, kind: BannerKind.error),
-
-            SizedBox(height: compact ? 8 : 10),
-            Expanded(child: _pinKeypad4(compact: compact)),
-            const SizedBox(height: 10),
-
-            OutlinedButton.icon(
-              onPressed: _busy ? null : _backToEmployeePick,
-              icon: const Icon(Icons.arrow_back),
-              label: const Text('Zurück'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
+    );
+  }
+
+  Widget _pinKeypad4({required bool compact, required double maxHeight}) {
+    final targetBtnH = compact ? 54.0 : 60.0;
+    final minBtnH = compact ? 38.0 : 42.0;
+    final targetGap = compact ? 8.0 : 10.0;
+
+    final computedBtnH = ((maxHeight - (targetGap * 3)) / 4).clamp(minBtnH, targetBtnH);
+    final btnH = computedBtnH.toDouble();
+    final gap = ((maxHeight - (btnH * 4)) / 3).clamp(4.0, targetGap).toDouble();
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        final btnW = ((c.maxWidth - (gap * 2)) / 3).clamp(76.0, 108.0).toDouble();
+
+        Widget key(String label, {VoidCallback? onTap, IconData? icon, bool outlined = false}) {
+          final child = icon != null
+              ? Icon(icon, size: compact ? 20 : 22)
+              : Text(label, style: TextStyle(fontSize: compact ? 20 : 22, fontWeight: FontWeight.w900));
+
+          final commonStyle = ButtonStyle(
+            minimumSize: WidgetStateProperty.all(Size(btnW, btnH)),
+            padding: WidgetStateProperty.all(EdgeInsets.zero),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
+          );
+
+          final btn = outlined
+              ? OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: Size(btnW, btnH),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: _busy ? null : onTap,
+                  child: child,
+                )
+              : FilledButton.tonal(
+                  style: commonStyle,
+                  onPressed: _busy ? null : onTap,
+                  child: child,
+                );
+
+          return SizedBox(width: btnW, height: btnH, child: btn);
+        }
+
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              key('1', onTap: () => _pinAppend('1')),
+              SizedBox(width: gap),
+              key('2', onTap: () => _pinAppend('2')),
+              SizedBox(width: gap),
+              key('3', onTap: () => _pinAppend('3')),
+            ]),
+            SizedBox(height: gap),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              key('4', onTap: () => _pinAppend('4')),
+              SizedBox(width: gap),
+              key('5', onTap: () => _pinAppend('5')),
+              SizedBox(width: gap),
+              key('6', onTap: () => _pinAppend('6')),
+            ]),
+            SizedBox(height: gap),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              key('7', onTap: () => _pinAppend('7')),
+              SizedBox(width: gap),
+              key('8', onTap: () => _pinAppend('8')),
+              SizedBox(width: gap),
+              key('9', onTap: () => _pinAppend('9')),
+            ]),
+            SizedBox(height: gap),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              key('C', onTap: _pinClear, outlined: true),
+              SizedBox(width: gap),
+              key('0', onTap: () => _pinAppend('0')),
+              SizedBox(width: gap),
+              key('', onTap: _pinBackspace, icon: Icons.backspace_outlined, outlined: true),
+            ]),
+          ],
+        );
+      },
     );
   }
 
@@ -781,60 +917,6 @@ class _PunchScreenState extends State<PunchScreen> {
     );
   }
 
-  Widget _pinKeypad4({required bool compact}) {
-    final btnH = compact ? 54.0 : 60.0;
-    final gap = compact ? 8.0 : 10.0;
-
-    Widget key(String label, {VoidCallback? onTap, IconData? icon, bool outlined = false}) {
-      final child = icon != null
-          ? Icon(icon, size: compact ? 20 : 22)
-          : Text(label, style: TextStyle(fontSize: compact ? 20 : 22, fontWeight: FontWeight.w900));
-
-      final btn = outlined
-          ? OutlinedButton(onPressed: _busy ? null : onTap, child: child)
-          : FilledButton.tonal(onPressed: _busy ? null : onTap, child: child);
-
-      return SizedBox(width: 108, height: btnH, child: btn);
-    }
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          key('1', onTap: () => _pinAppend('1')),
-          SizedBox(width: gap),
-          key('2', onTap: () => _pinAppend('2')),
-          SizedBox(width: gap),
-          key('3', onTap: () => _pinAppend('3')),
-        ]),
-        SizedBox(height: gap),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          key('4', onTap: () => _pinAppend('4')),
-          SizedBox(width: gap),
-          key('5', onTap: () => _pinAppend('5')),
-          SizedBox(width: gap),
-          key('6', onTap: () => _pinAppend('6')),
-        ]),
-        SizedBox(height: gap),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          key('7', onTap: () => _pinAppend('7')),
-          SizedBox(width: gap),
-          key('8', onTap: () => _pinAppend('8')),
-          SizedBox(width: gap),
-          key('9', onTap: () => _pinAppend('9')),
-        ]),
-        SizedBox(height: gap),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          key('C', onTap: _pinClear, outlined: true),
-          SizedBox(width: gap),
-          key('0', onTap: () => _pinAppend('0')),
-          SizedBox(width: gap),
-          key('', onTap: _pinBackspace, icon: Icons.backspace_outlined, outlined: true),
-        ]),
-      ],
-    );
-  }
-
   // -------------------------
   // Punch: 2x2 grid
   // -------------------------
@@ -853,6 +935,8 @@ class _PunchScreenState extends State<PunchScreen> {
               Expanded(
                 child: Text(
                   '${_employeeName ?? ''} (${_employeeId ?? ''})',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, letterSpacing: -0.2),
                 ),
               ),
@@ -894,42 +978,51 @@ class _PunchScreenState extends State<PunchScreen> {
           SizedBox(height: compact ? 10 : 12),
 
           Expanded(
-            child: GridView.count(
-              crossAxisCount: 2,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-              childAspectRatio: compact ? 2.9 : 2.6,
-              children: [
-                _gridAction(
-                  label: 'Kommen',
-                  icon: Icons.login,
-                  enabled: canPunchIn,
-                  compact: compact,
-                  onTap: () => _punch('IN'),
-                ),
-                _gridAction(
-                  label: 'Gehen',
-                  icon: Icons.logout,
-                  enabled: canPunchOut,
-                  compact: compact,
-                  onTap: () => _punch('OUT'),
-                ),
-                _gridAction(
-                  label: 'Pause Start',
-                  icon: Icons.pause,
-                  enabled: canBreakStart,
-                  compact: compact,
-                  onTap: () => _punch('BREAK_START'),
-                ),
-                _gridAction(
-                  label: 'Pause Ende',
-                  icon: Icons.play_arrow,
-                  enabled: canBreakEnd,
-                  compact: compact,
-                  onTap: () => _punch('BREAK_END'),
-                ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, c) {
+                const spacing = 10.0;
+                final tileWidth = (c.maxWidth - spacing) / 2;
+                final targetTileHeight = ((c.maxHeight - spacing) / 2).clamp(56.0, 220.0).toDouble();
+                final ratio = (tileWidth / targetTileHeight).clamp(1.6, 7.0).toDouble();
+
+                return GridView.count(
+                  crossAxisCount: 2,
+                  physics: const BouncingScrollPhysics(),
+                  crossAxisSpacing: spacing,
+                  mainAxisSpacing: spacing,
+                  childAspectRatio: ratio,
+                  children: [
+                    _gridAction(
+                      label: 'Kommen',
+                      icon: Icons.login,
+                      enabled: canPunchIn,
+                      compact: compact,
+                      onTap: () => _punch('IN'),
+                    ),
+                    _gridAction(
+                      label: 'Gehen',
+                      icon: Icons.logout,
+                      enabled: canPunchOut,
+                      compact: compact,
+                      onTap: () => _punch('OUT'),
+                    ),
+                    _gridAction(
+                      label: 'Pause Start',
+                      icon: Icons.pause,
+                      enabled: canBreakStart,
+                      compact: compact,
+                      onTap: () => _punch('BREAK_START'),
+                    ),
+                    _gridAction(
+                      label: 'Pause Ende',
+                      icon: Icons.play_arrow,
+                      enabled: canBreakEnd,
+                      compact: compact,
+                      onTap: () => _punch('BREAK_END'),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],

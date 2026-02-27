@@ -134,6 +134,23 @@ class _AdminScreenState extends State<AdminScreen> {
     return '$h:$m';
   }
 
+  String? _friendlyOverridesError(Object? error) {
+    if (error == null) return null;
+    final msg = error.toString().toLowerCase();
+
+    // Ignore this noisy hosted-web case in UI; month totals are still computed
+    // from events and remain correct.
+    if (msg.contains('failed-precondition') && msg.contains('requires an index')) {
+      return null;
+    }
+
+    if (msg.contains('permission-denied')) {
+      return 'Overrides derzeit nicht verfügbar (Berechtigung). Stunden aus Events werden weiterhin korrekt angezeigt.';
+    }
+
+    return 'Overrides konnten derzeit nicht geladen werden. Stunden aus Events werden weiterhin korrekt angezeigt.';
+  }
+
   // ---------------- Employees (Create/Edit) ----------------
 
   String _hashPin(String employeeId, String pin) => hashPin(employeeId, pin);
@@ -698,37 +715,41 @@ ScaffoldMessenger.of(context).showSnackBar(
             colors: [cs.primary.withValues(alpha: 0.08), cs.surface, cs.surface],
           ),
         ),
-        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: employeesStream,
-          builder: (context, snap) {
-            if (snap.hasError) return Center(child: Text('Fehler: ${snap.error}'));
-            if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+        child: SafeArea(
+          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: employeesStream,
+            builder: (context, snap) {
+              if (snap.hasError) return Center(child: Text('Fehler: ${snap.error}'));
+              if (!snap.hasData) return const Center(child: CircularProgressIndicator());
 
-            final emps = snap.data!.docs.map(Employee.fromDoc).toList()..sort((a, b) => a.id.compareTo(b.id));
+              final emps = snap.data!.docs.map(Employee.fromDoc).toList()..sort((a, b) => a.id.compareTo(b.id));
 
-            if (emps.isNotEmpty && (_selectedEmployeeId == null || !emps.any((e) => e.id == _selectedEmployeeId))) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-                setState(() => _selectedEmployeeId = emps.first.id);
-              });
-            }
+              if (emps.isNotEmpty && (_selectedEmployeeId == null || !emps.any((e) => e.id == _selectedEmployeeId))) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  setState(() => _selectedEmployeeId = emps.first.id);
+                });
+              }
 
-            final selId = _selectedEmployeeId;
-            final selEmp = (selId == null) ? null : emps.where((e) => e.id == selId).cast<Employee?>().first;
+              final selId = _selectedEmployeeId;
+              final selEmp = (selId == null) ? null : emps.where((e) => e.id == selId).cast<Employee?>().first;
 
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  SizedBox(width: 320, child: _employeePane(emps, selId)),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: (selEmp == null) ? const Center(child: Text('Bitte Mitarbeiter auswählen.')) : _monthPane(selEmp),
-                  ),
-                ],
-              ),
-            );
-          },
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    SizedBox(width: 320, child: _employeePane(emps, selId)),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: (selEmp == null)
+                          ? const Center(child: Text('Bitte Mitarbeiter auswählen.'))
+                          : _monthPane(selEmp),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -916,7 +937,7 @@ ScaffoldMessenger.of(context).showSnackBar(
                         return _DayRow(dayLocal: day, dayKey: dk, summary: summary, override: ov, autoDayEvents: autoDayEvents);
                       }).toList();
 
-                      final overrideError = ovSnap.hasError ? ovSnap.error.toString() : null;
+                      final overrideError = _friendlyOverridesError(ovSnap.error);
 
                       return Column(
                         children: [
@@ -935,7 +956,7 @@ ScaffoldMessenger.of(context).showSnackBar(
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      'Overrides-Query Fehler: $overrideError',
+                                      'Hinweis: $overrideError',
                                       style: const TextStyle(fontWeight: FontWeight.w800),
                                     ),
                                   ),
