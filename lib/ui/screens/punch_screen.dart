@@ -62,6 +62,23 @@ class _PunchScreenState extends State<PunchScreen> {
   Timer? _ticker;
   DateTime _now = DateTime.now();
 
+  String _mapFirestoreError(Object error) {
+    if (error is FirebaseException) {
+      switch (error.code) {
+        case 'permission-denied':
+          return 'Kein Zugriff auf Firestore (Regeln/Berechtigung).';
+        case 'unavailable':
+          return 'Keine Verbindung zu Firestore (Netzwerk/Server nicht erreichbar).';
+        case 'unauthenticated':
+          return 'Nicht authentifiziert. Bitte App neu starten.';
+        case 'deadline-exceeded':
+          return 'Firestore-Timeout. Bitte Verbindung prüfen.';
+      }
+      return 'Firestore-Fehler: ${error.code}';
+    }
+    return 'Unbekannter Firestore-Fehler.';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -110,9 +127,10 @@ class _PunchScreenState extends State<PunchScreen> {
         });
       },
       onError: (e) {
+        debugPrint('Firestore employees stream error: $e');
         if (!mounted) return;
         setState(() {
-          _error = 'Mitarbeiter konnten nicht geladen werden (Firestore).';
+          _error = 'Mitarbeiter konnten nicht geladen werden. ${_mapFirestoreError(e)}';
         });
       },
     );

@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdminUser() {
+      return isSignedIn()
+        && request.auth.token.firebase != null
+        && request.auth.token.firebase.sign_in_provider != "anonymous";
+    }
+
+    // Terminal app
+    match /employees/{employeeId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdminUser();
+      allow delete: if false;
+    }
+
+    match /events/{eventId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    match /config/terminal {
+      allow read: if isSignedIn();
+      allow write: if isAdminUser();
+    }
+
+    // Admin app data
+    match /day_overrides/{overrideId} {
+      allow read, write: if isAdminUser();
+    }
+
+    match /audit/{auditId} {
+      allow read, write: if isAdminUser();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
