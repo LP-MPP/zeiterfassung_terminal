@@ -7,8 +7,7 @@ service cloud.firestore {
 
     function isAdminUser() {
       return isSignedIn()
-        && request.auth.token.firebase != null
-        && request.auth.token.firebase.sign_in_provider != "anonymous";
+        && request.auth.token.email != null;
     }
 
     // Terminal app

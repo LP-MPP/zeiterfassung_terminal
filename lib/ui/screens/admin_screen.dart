@@ -151,6 +151,19 @@ class _AdminScreenState extends State<AdminScreen> {
     return 'Overrides konnten derzeit nicht geladen werden. Stunden aus Events werden weiterhin korrekt angezeigt.';
   }
 
+  String _mapFirestoreWriteError(FirebaseException e) {
+    switch (e.code) {
+      case 'permission-denied':
+        return 'Keine Berechtigung zum Speichern (Firestore Rules).';
+      case 'unauthenticated':
+        return 'Nicht angemeldet. Bitte Admin-Login erneut durchführen.';
+      case 'unavailable':
+        return 'Firestore derzeit nicht erreichbar (Netzwerk/Server).';
+      default:
+        return 'Firestore-Fehler: ${e.code}';
+    }
+  }
+
   // ---------------- Employees (Create/Edit) ----------------
 
   String _hashPin(String employeeId, String pin) => hashPin(employeeId, pin);
@@ -376,6 +389,16 @@ class _AdminScreenState extends State<AdminScreen> {
     return localDt.toUtc().millisecondsSinceEpoch;
   }
 
+  DateTime? _resolvedOverrideDateTime({
+    required Map<String, dynamic> override,
+    required String valueKey,
+    required DateTime? autoValue,
+  }) {
+    if (!override.containsKey(valueKey)) return autoValue;
+
+    return _localFromUtcMs(override[valueKey]) ?? autoValue;
+  }
+
   Map<String, List<TimeEvent>> _groupEventsByDayKey(List<TimeEvent> events) {
     final map = <String, List<TimeEvent>>{};
     for (final e in events) {
@@ -428,11 +451,31 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  _DaySummary _summaryFromOverride(Map<String, dynamic> o) {
-    final inTime = _localFromUtcMs(o['inUtcMs']);
-    final outTime = _localFromUtcMs(o['outUtcMs']);
-    final breakStart = _localFromUtcMs(o['breakStartUtcMs']);
-    final breakEnd = _localFromUtcMs(o['breakEndUtcMs']);
+  _DaySummary _summaryFromOverrideMerged(Map<String, dynamic> o, List<TimeEvent> autoDayEvents) {
+    final auto = _summaryFromEventsForDay(autoDayEvents);
+
+    // Override values take precedence. Missing override fields fall back to
+    // actual terminal events so partial day corrections keep evolving.
+    final inTime = _resolvedOverrideDateTime(
+      override: o,
+      valueKey: 'inUtcMs',
+      autoValue: auto.inTime,
+    );
+    final outTime = _resolvedOverrideDateTime(
+      override: o,
+      valueKey: 'outUtcMs',
+      autoValue: auto.outTime,
+    );
+    final breakStart = _resolvedOverrideDateTime(
+      override: o,
+      valueKey: 'breakStartUtcMs',
+      autoValue: auto.breakStart,
+    );
+    final breakEnd = _resolvedOverrideDateTime(
+      override: o,
+      valueKey: 'breakEndUtcMs',
+      autoValue: auto.breakEnd,
+    );
 
     final workSpan = _safeDiff(inTime, outTime);
     final breakSpan = _safeDiff(breakStart, breakEnd);
@@ -462,12 +505,33 @@ class _AdminScreenState extends State<AdminScreen> {
     DateTime? outTime;
     DateTime? breakStart;
     DateTime? breakEnd;
+    bool removeInOverride = false;
+    bool removeOutOverride = false;
+    bool removeBreakStartOverride = false;
+    bool removeBreakEndOverride = false;
 
     if (existingOverride != null) {
-      inTime = _localFromUtcMs(existingOverride['inUtcMs']);
-      outTime = _localFromUtcMs(existingOverride['outUtcMs']);
-      breakStart = _localFromUtcMs(existingOverride['breakStartUtcMs']);
-      breakEnd = _localFromUtcMs(existingOverride['breakEndUtcMs']);
+      final auto = _summaryFromEventsForDay(autoDayEvents);
+      inTime = _resolvedOverrideDateTime(
+        override: existingOverride,
+        valueKey: 'inUtcMs',
+        autoValue: auto.inTime,
+      );
+      outTime = _resolvedOverrideDateTime(
+        override: existingOverride,
+        valueKey: 'outUtcMs',
+        autoValue: auto.outTime,
+      );
+      breakStart = _resolvedOverrideDateTime(
+        override: existingOverride,
+        valueKey: 'breakStartUtcMs',
+        autoValue: auto.breakStart,
+      );
+      breakEnd = _resolvedOverrideDateTime(
+        override: existingOverride,
+        valueKey: 'breakEndUtcMs',
+        autoValue: auto.breakEnd,
+      );
     } else {
       final auto = _summaryFromEventsForDay(autoDayEvents);
       inTime = auto.inTime;
@@ -541,9 +605,15 @@ class _AdminScreenState extends State<AdminScreen> {
                       inTime,
                       () async {
                         final t = await pickTime(inTime);
-                        setD(() => inTime = t);
+                        setD(() {
+                          inTime = t;
+                          removeInOverride = false;
+                        });
                       },
-                      () => setD(() => inTime = null),
+                      () => setD(() {
+                        inTime = null;
+                        removeInOverride = true;
+                      }),
                     ),
                     const SizedBox(height: 10),
                     row(
@@ -551,9 +621,15 @@ class _AdminScreenState extends State<AdminScreen> {
                       outTime,
                       () async {
                         final t = await pickTime(outTime);
-                        setD(() => outTime = t);
+                        setD(() {
+                          outTime = t;
+                          removeOutOverride = false;
+                        });
                       },
-                      () => setD(() => outTime = null),
+                      () => setD(() {
+                        outTime = null;
+                        removeOutOverride = true;
+                      }),
                     ),
                     const SizedBox(height: 10),
                     row(
@@ -561,9 +637,15 @@ class _AdminScreenState extends State<AdminScreen> {
                       breakStart,
                       () async {
                         final t = await pickTime(breakStart);
-                        setD(() => breakStart = t);
+                        setD(() {
+                          breakStart = t;
+                          removeBreakStartOverride = false;
+                        });
                       },
-                      () => setD(() => breakStart = null),
+                      () => setD(() {
+                        breakStart = null;
+                        removeBreakStartOverride = true;
+                      }),
                     ),
                     const SizedBox(height: 10),
                     row(
@@ -571,9 +653,15 @@ class _AdminScreenState extends State<AdminScreen> {
                       breakEnd,
                       () async {
                         final t = await pickTime(breakEnd);
-                        setD(() => breakEnd = t);
+                        setD(() {
+                          breakEnd = t;
+                          removeBreakEndOverride = false;
+                        });
                       },
-                      () => setD(() => breakEnd = null),
+                      () => setD(() {
+                        breakEnd = null;
+                        removeBreakEndOverride = true;
+                      }),
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -632,53 +720,98 @@ class _AdminScreenState extends State<AdminScreen> {
     final payload = <String, dynamic>{
       'employeeId': employeeId,
       'dayKey': dayKey,
-      'inUtcMs': _utcMsFromLocalDateTime(inTime),
-      'outUtcMs': _utcMsFromLocalDateTime(outTime),
-      'breakStartUtcMs': _utcMsFromLocalDateTime(breakStart),
-      'breakEndUtcMs': _utcMsFromLocalDateTime(breakEnd),
       'reason': reason,
       'adminUid': adminUid,
       'updatedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
     };
 
-    await overrideDoc.set(payload, SetOptions(merge: true));
+    void putOverrideField({
+      required String valueKey,
+      required DateTime? value,
+      required bool removeOverrideValue,
+    }) {
+      final ms = _utcMsFromLocalDateTime(value);
+      if (ms != null) {
+        payload[valueKey] = ms;
+        return;
+      }
+      if (removeOverrideValue) {
+        payload[valueKey] = FieldValue.delete();
+      }
+    }
 
-await _auditCol.add({
-  'action': 'DAY_OVERRIDE_SET',
-  'employeeId': employeeId,
-  'dayKey': dayKey,
-  'reason': reason,
-  'adminUid': adminUid,
-  'createdAt': FieldValue.serverTimestamp(),
-  'payload': {
-    'inUtcMs': payload['inUtcMs'],
-    'outUtcMs': payload['outUtcMs'],
-    'breakStartUtcMs': payload['breakStartUtcMs'],
-    'breakEndUtcMs': payload['breakEndUtcMs'],
-  },
-});
+    putOverrideField(valueKey: 'inUtcMs', value: inTime, removeOverrideValue: removeInOverride);
+    putOverrideField(valueKey: 'outUtcMs', value: outTime, removeOverrideValue: removeOutOverride);
+    putOverrideField(
+      valueKey: 'breakStartUtcMs',
+      value: breakStart,
+      removeOverrideValue: removeBreakStartOverride,
+    );
+    putOverrideField(
+      valueKey: 'breakEndUtcMs',
+      value: breakEnd,
+      removeOverrideValue: removeBreakEndOverride,
+    );
 
-// 🔹 Optimistic UI: sofort lokal setzen, unabhängig vom Snapshot-Timing
-_optimisticOverrides[dayKey] = {
-  'employeeId': employeeId,
-  'dayKey': dayKey,
-  'inUtcMs': payload['inUtcMs'],
-  'outUtcMs': payload['outUtcMs'],
-  'breakStartUtcMs': payload['breakStartUtcMs'],
-  'breakEndUtcMs': payload['breakEndUtcMs'],
-  'reason': reason,
-  'adminUid': adminUid,
-};
+    try {
+      await overrideDoc.set(payload, SetOptions(merge: true));
 
-if (!mounted) return;
+      // Audit is best-effort; failed audit must not roll back a valid override save.
+      try {
+        await _auditCol.add({
+          'action': 'DAY_OVERRIDE_SET',
+          'employeeId': employeeId,
+          'dayKey': dayKey,
+          'reason': reason,
+          'adminUid': adminUid,
+          'createdAt': FieldValue.serverTimestamp(),
+          'payload': {
+            'inUtcMs': payload['inUtcMs'],
+            'outUtcMs': payload['outUtcMs'],
+            'breakStartUtcMs': payload['breakStartUtcMs'],
+            'breakEndUtcMs': payload['breakEndUtcMs'],
+          },
+        });
+      } on FirebaseException catch (e) {
+        debugPrint('Audit write failed after override save: ${e.code} ${e.message}');
+      }
 
-// 🔹 Rebuild erzwingen, damit der Tag sofort aktualisiert wird
-setState(() {});
+      // Local fast path, DB snapshot remains source of truth.
+      final optimistic = <String, dynamic>{
+        'employeeId': employeeId,
+        'dayKey': dayKey,
+        'reason': reason,
+        'adminUid': adminUid,
+      };
+      final inMs = _utcMsFromLocalDateTime(inTime);
+      final outMs = _utcMsFromLocalDateTime(outTime);
+      final breakStartMs = _utcMsFromLocalDateTime(breakStart);
+      final breakEndMs = _utcMsFromLocalDateTime(breakEnd);
+      if (inMs != null) optimistic['inUtcMs'] = inMs;
+      if (outMs != null) optimistic['outUtcMs'] = outMs;
+      if (breakStartMs != null) optimistic['breakStartUtcMs'] = breakStartMs;
+      if (breakEndMs != null) optimistic['breakEndUtcMs'] = breakEndMs;
+      _optimisticOverrides[dayKey] = optimistic;
 
-ScaffoldMessenger.of(context).showSnackBar(
-  SnackBar(content: Text('Override gespeichert ($dayKey).')),
-);
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Override gespeichert ($dayKey).')),
+      );
+    } on FirebaseException catch (e) {
+      debugPrint('Override write failed: ${e.code} ${e.message}');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Override nicht gespeichert: ${_mapFirestoreWriteError(e)}')),
+      );
+    } catch (e) {
+      debugPrint('Override write failed (unknown): $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Override nicht gespeichert: $e')),
+      );
+    }
   }
 
   @override
@@ -932,7 +1065,8 @@ ScaffoldMessenger.of(context).showSnackBar(
                         final dk = _dayKeyLocal(day);
                         final ov = overrides[dk];
                         final autoDayEvents = (byDay[dk] ?? const <TimeEvent>[]);
-                        final summary = (ov != null) ? _summaryFromOverride(ov) : _summaryFromEventsForDay(autoDayEvents);
+                        final summary =
+                            (ov != null) ? _summaryFromOverrideMerged(ov, autoDayEvents) : _summaryFromEventsForDay(autoDayEvents);
                         totalNet += summary.net;
                         return _DayRow(dayLocal: day, dayKey: dk, summary: summary, override: ov, autoDayEvents: autoDayEvents);
                       }).toList();
