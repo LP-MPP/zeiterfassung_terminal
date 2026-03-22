@@ -12,20 +12,31 @@ service cloud.firestore {
 
     // Terminal app
     match /employees/{employeeId} {
-      allow read: if isSignedIn();
-      allow create, update: if isAdminUser();
+      allow read, create, update: if isAdminUser();
       allow delete: if false;
     }
 
     match /events/{eventId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
+      allow read, create: if isAdminUser();
       allow update, delete: if false;
+    }
+
+    match /employee_state/{employeeId} {
+      allow read, write: if isAdminUser();
+    }
+
+    match /terminal_sessions/{sessionId} {
+      allow read, write: if false;
+    }
+
+    match /login_attempts/{attemptId} {
+      allow read, write: if false;
     }
 
     match /config/terminal {
       allow read: if isSignedIn();
-      allow write: if isAdminUser();
+      allow create, update: if isAdminUser();
+      allow delete: if false;
     }
 
     // Admin app data

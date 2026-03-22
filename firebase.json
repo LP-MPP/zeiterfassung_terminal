@@ -33,6 +33,9 @@
       }
     ]
   },
+  "functions": {
+    "source": "functions"
+  },
   "firestore": {
     "rules": "firestore.rules"
   }

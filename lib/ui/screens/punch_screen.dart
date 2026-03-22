@@ -1,13 +1,12 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/constants.dart';
 import '../../core/rules.dart';
-import '../../core/security.dart';
 import '../../data/store.dart';
 import '../widgets/banner.dart';
 import '../widgets/logout_countdown_chip.dart';
@@ -23,18 +22,16 @@ class PunchScreen extends StatefulWidget {
 }
 
 class _PunchScreenState extends State<PunchScreen> {
-  final _store = InMemoryStore.instance;
-  final _db = FirebaseFirestore.instance;
+  final _functions = FirebaseFunctions.instanceFor(region: 'europe-west3');
 
-  // Employees loaded from Firestore (source of truth for login UI)
   List<Employee> _activeEmps = const [];
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _empSub;
 
   bool _loggedIn = false;
   bool _busy = false;
 
   String? _employeeId;
   String? _employeeName;
+  String? _sessionId;
 
   _LoginStep _loginStep = _LoginStep.pickEmployee;
   String? _selectedEmpId;
@@ -62,27 +59,34 @@ class _PunchScreenState extends State<PunchScreen> {
   Timer? _ticker;
   DateTime _now = DateTime.now();
 
-  String _mapFirestoreError(Object error) {
-    if (error is FirebaseException) {
+  String _mapBackendError(Object error) {
+    if (error is FirebaseFunctionsException) {
       switch (error.code) {
         case 'permission-denied':
-          return 'Kein Zugriff auf Firestore (Regeln/Berechtigung).';
+          return 'PIN oder Berechtigung ist ungültig.';
         case 'unavailable':
-          return 'Keine Verbindung zu Firestore (Netzwerk/Server nicht erreichbar).';
+          return 'Keine Verbindung zum Backend.';
         case 'unauthenticated':
           return 'Nicht authentifiziert. Bitte App neu starten.';
         case 'deadline-exceeded':
-          return 'Firestore-Timeout. Bitte Verbindung prüfen.';
+          return 'Backend-Timeout. Bitte Verbindung prüfen.';
+        case 'resource-exhausted':
+          return 'Zu viele Versuche. Bitte kurz warten.';
+        case 'failed-precondition':
+          return error.message ?? 'Aktion derzeit nicht zulässig.';
+        case 'invalid-argument':
+          return error.message ?? 'Ungültige Eingabe.';
       }
-      return 'Firestore-Fehler: ${error.code}';
+      return error.message ?? 'Backend-Fehler: ${error.code}';
     }
-    return 'Unbekannter Firestore-Fehler.';
+    return 'Unbekannter Backend-Fehler.';
   }
 
   @override
   void initState() {
     super.initState();
-    _store.init(listenEmployees: false, listenEvents: true);
+    _loadActiveEmployees();
+
     // Live clock + idle evaluation
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -97,51 +101,59 @@ class _PunchScreenState extends State<PunchScreen> {
         _evaluateIdle();
       });
     });
-
-    // Subscribe active employees from Firestore
-    _empSub = _db
-        .collection('employees')
-        .where('active', isEqualTo: true)
-        .snapshots()
-        .listen(
-      (snap) {
-        final emps = snap.docs.map(Employee.fromDoc).toList()
-          ..sort((a, b) => a.id.compareTo(b.id));
-
-        if (!mounted) return;
-        setState(() {
-          _activeEmps = emps;
-
-          // If user is in PIN step and selected employee became inactive/removed
-          if (!_loggedIn && _loginStep == _LoginStep.enterPin) {
-            final sel = _normId(_selectedEmpId);
-            final ok = sel.isNotEmpty && _activeEmps.any((e) => _normId(e.id) == sel);
-            if (!ok) {
-              _loginStep = _LoginStep.pickEmployee;
-              _selectedEmpId = null;
-              _selectedEmpName = null;
-              _pinInput = '';
-              _error = null;
-            }
-          }
-        });
-      },
-      onError: (e) {
-        debugPrint('Firestore employees stream error: $e');
-        if (!mounted) return;
-        setState(() {
-          _error = 'Mitarbeiter konnten nicht geladen werden. ${_mapFirestoreError(e)}';
-        });
-      },
-    );
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
     _autoLogoutTimer?.cancel();
-    _empSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadActiveEmployees() async {
+    try {
+      final result = await _functions.httpsCallable('listActiveEmployeesPublic').call();
+      final raw = (result.data is List)
+          ? (result.data as List)
+          : ((result.data is Map && (result.data as Map).containsKey('employees'))
+                ? ((result.data as Map)['employees'] as List? ?? const [])
+                : const []);
+
+      final emps = raw
+          .whereType<Map>()
+          .map((rawEmp) => Employee(
+                id: (rawEmp['id'] ?? '').toString(),
+                name: (rawEmp['name'] ?? '').toString(),
+                pinHash: '',
+                active: (rawEmp['active'] ?? true) == true,
+              ))
+          .where((e) => e.id.isNotEmpty && e.active)
+          .toList()
+        ..sort((a, b) => a.id.compareTo(b.id));
+
+      if (!mounted) return;
+      setState(() {
+        _activeEmps = emps;
+
+        if (!_loggedIn && _loginStep == _LoginStep.enterPin) {
+          final sel = _normId(_selectedEmpId);
+          final ok = sel.isNotEmpty && _activeEmps.any((e) => _normId(e.id) == sel);
+          if (!ok) {
+            _loginStep = _LoginStep.pickEmployee;
+            _selectedEmpId = null;
+            _selectedEmpName = null;
+            _pinInput = '';
+            _error = null;
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint('Backend employee load error: $e');
+      if (!mounted) return;
+      setState(() {
+        _error = 'Mitarbeiter konnten nicht geladen werden. ${_mapBackendError(e)}';
+      });
+    }
   }
 
   bool _isCompact(BuildContext context) {
@@ -209,11 +221,8 @@ class _PunchScreenState extends State<PunchScreen> {
   // Status
   // -------------------------
 
-  Future<void> _refreshStatus() async {
-    if (_employeeId == null) return;
-    final last = _store.lastEventType(_employeeId!);
-    final state = stateFromLastEvent(last);
-
+  String _statusFromLastEvent(String? lastEventType) {
+    final state = stateFromLastEvent(lastEventType);
     final String status;
     switch (state) {
       case WorkState.off:
@@ -226,18 +235,10 @@ class _PunchScreenState extends State<PunchScreen> {
         status = 'Pause';
         break;
     }
-
-    if (!mounted) return;
-    setState(() {
-      _lastEventType = last;
-      _statusText = status;
-    });
+    return status;
   }
 
   String _normId(String? id) => (id ?? '').trim().toUpperCase();
-
-  String _hashPinLocal(String employeeId, String pin) =>
-      hashPin(_normId(employeeId), pin.trim());
 
   void _logout({bool keepBanner = false}) {
     _stopAutoLogoutTimer();
@@ -247,6 +248,7 @@ class _PunchScreenState extends State<PunchScreen> {
 
       _employeeId = null;
       _employeeName = null;
+      _sessionId = null;
 
       _lastEventType = null;
       _statusText = null;
@@ -310,12 +312,26 @@ class _PunchScreenState extends State<PunchScreen> {
       final emp = _activeEmps.where((e) => _normId(e.id) == id).cast<Employee?>().firstOrNull;
       if (emp == null) throw StateError('Mitarbeiter nicht gefunden oder inaktiv.');
 
-      if (emp.pinHash != _hashPinLocal(id, _pinInput)) throw StateError('PIN falsch.');
+      final result = await _functions.httpsCallable('authenticateEmployeePin').call({
+        'employeeId': id,
+        'pin': _pinInput.trim(),
+        'terminalId': terminalId,
+      });
+
+      final data = Map<String, dynamic>.from((result.data as Map?) ?? const {});
+      final sessionId = data['sessionId']?.toString();
+      final lastEventType = data['lastEventType']?.toString();
+      if (sessionId == null || sessionId.isEmpty) {
+        throw StateError('Login konnte nicht bestätigt werden.');
+      }
 
       setState(() {
         _loggedIn = true;
-        _employeeId = _normId(id);
-        _employeeName = emp.name;
+        _employeeId = data['employeeId']?.toString() ?? _normId(id);
+        _employeeName = data['employeeName']?.toString() ?? emp.name;
+        _sessionId = sessionId;
+        _lastEventType = lastEventType;
+        _statusText = _statusFromLastEvent(lastEventType);
 
         _loginStep = _LoginStep.pickEmployee;
         _selectedEmpId = null;
@@ -327,11 +343,14 @@ class _PunchScreenState extends State<PunchScreen> {
       });
 
       _startAutoLogoutTimer();
-      await _refreshStatus();
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString().replaceFirst('StateError: ', '').replaceFirst('Bad state: ', '');
+        if (e is StateError) {
+          _error = e.toString().replaceFirst('StateError: ', '').replaceFirst('Bad state: ', '');
+        } else {
+          _error = _mapBackendError(e);
+        }
         _pinInput = '';
       });
     } finally {
@@ -346,7 +365,7 @@ class _PunchScreenState extends State<PunchScreen> {
   // -------------------------
 
   Future<void> _punch(String eventType) async {
-    if (_employeeId == null) return;
+    if (_employeeId == null || _sessionId == null) return;
 
     setState(() {
       _busy = true;
@@ -356,23 +375,21 @@ class _PunchScreenState extends State<PunchScreen> {
     });
 
     try {
-      final last = _store.lastEventType(_employeeId!);
-      final st = stateFromLastEvent(last);
+      final result = await _functions.httpsCallable('createPunchEvent').call({
+        'sessionId': _sessionId,
+        'eventType': eventType,
+        'terminalId': terminalId,
+      });
 
-      if (!isAllowed(st, eventType)) {
-        throw StateError('Aktion nicht zulässig (letztes Event: ${last ?? "—"}).');
+      final data = Map<String, dynamic>.from((result.data as Map?) ?? const {});
+      final utcMs = (data['timestampUtcMs'] is int)
+          ? data['timestampUtcMs'] as int
+          : int.tryParse((data['timestampUtcMs'] ?? '').toString());
+      if (utcMs == null) {
+        throw StateError('Zeitstempel konnte nicht gelesen werden.');
       }
 
-      final ev = await _store.addEvent(
-        employeeId: _employeeId!,
-        eventType: eventType,
-        terminalId: terminalId,
-        source: 'PIN',
-      );
-
-      await _refreshStatus();
-
-      final local = DateTime.fromMillisecondsSinceEpoch(ev.timestampUtcMs, isUtc: true).toLocal();
+      final local = DateTime.fromMillisecondsSinceEpoch(utcMs, isUtc: true).toLocal();
       final t = DateFormat('HH:mm:ss').format(local);
 
       setState(() {
@@ -384,7 +401,13 @@ class _PunchScreenState extends State<PunchScreen> {
       _logout(keepBanner: true);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString().replaceFirst('StateError: ', '').replaceFirst('Bad state: ', ''));
+      setState(() {
+        if (e is StateError) {
+          _error = e.toString().replaceFirst('StateError: ', '').replaceFirst('Bad state: ', '');
+        } else {
+          _error = _mapBackendError(e);
+        }
+      });
     } finally {
       if (!mounted) return;
       setState(() => _busy = false);

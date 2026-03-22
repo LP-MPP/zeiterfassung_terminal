@@ -75,7 +75,7 @@ class TimeEvent {
   }
 
   static String dayKeyFromUtcMs(int utcMs) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(utcMs, isUtc: true);
+    final dt = DateTime.fromMillisecondsSinceEpoch(utcMs, isUtc: true).toLocal();
     final y = dt.year.toString().padLeft(4, '0');
     final m = dt.month.toString().padLeft(2, '0');
     final d = dt.day.toString().padLeft(2, '0');
@@ -105,6 +105,7 @@ class InMemoryStore {
 
   CollectionReference<Map<String, dynamic>> get _empCol => _db.collection('employees');
   CollectionReference<Map<String, dynamic>> get _evCol => _db.collection('events');
+  CollectionReference<Map<String, dynamic>> get _stateCol => _db.collection('employee_state');
 
   /// Start realtime listeners.
   /// You can subscribe only to events (recommended for terminal),
@@ -227,6 +228,15 @@ class InMemoryStore {
       adminUid: adminUid,
     );
     await doc.set(ev.toMap());
+    await _stateCol.doc(employeeId).set({
+      'employeeId': employeeId,
+      'lastEventType': eventType,
+      'timestampUtcMs': utcMs,
+      'terminalId': terminalId,
+      'source': source,
+      'dayKey': TimeEvent.dayKeyFromUtcMs(utcMs),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
     return ev;
   }
 
@@ -252,6 +262,15 @@ class InMemoryStore {
       adminUid: adminUid,
     );
     await doc.set(ev.toMap());
+    await _stateCol.doc(employeeId).set({
+      'employeeId': employeeId,
+      'lastEventType': eventType,
+      'timestampUtcMs': timestampUtcMs,
+      'terminalId': terminalId,
+      'source': source,
+      'dayKey': TimeEvent.dayKeyFromUtcMs(timestampUtcMs),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
     return ev;
   }
 
