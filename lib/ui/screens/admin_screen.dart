@@ -1158,6 +1158,10 @@ class _AdminScreenState extends State<AdminScreen> {
 
     final s = row.summary;
 
+    final hasActivity = s.inTime != null || s.outTime != null || s.breakStart != null || s.breakEnd != null;
+    final missingOut = hasActivity && s.inTime != null && s.outTime == null;
+    final missingBreakEnd = hasActivity && s.breakStart != null && s.breakEnd == null;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1190,9 +1194,9 @@ class _AdminScreenState extends State<AdminScreen> {
               children: [
                 Expanded(child: _kv('Kommen', _hhmm(s.inTime))),
                 const SizedBox(width: 8),
-                Expanded(child: _kv('Gehen', _hhmm(s.outTime))),
+                Expanded(child: _kv('Gehen', _hhmm(s.outTime), warn: missingOut)),
                 const SizedBox(width: 8),
-                Expanded(child: _kv('Pause', '${_hhmm(s.breakStart)}–${_hhmm(s.breakEnd)}')),
+                Expanded(child: _kv('Pause', '${_hhmm(s.breakStart)}–${_hhmm(s.breakEnd)}', warn: missingBreakEnd)),
                 const SizedBox(width: 8),
                 Expanded(child: _kv('Netto', '${_durHHMM(s.net)} h')),
               ],
@@ -1209,14 +1213,14 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  Widget _kv(String k, String v) {
+  Widget _kv(String k, String v, {bool warn = false}) {
     final cs = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
-        color: cs.primary.withValues(alpha: 0.04),
-        border: Border.all(color: cs.outlineVariant),
+        color: warn ? const Color(0xFFFCEEF0) : cs.primary.withValues(alpha: 0.04),
+        border: Border.all(color: warn ? const Color(0xFFE9A7AE) : cs.outlineVariant),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1225,13 +1229,13 @@ class _AdminScreenState extends State<AdminScreen> {
           Text(
             k,
             style: TextStyle(
-              color: cs.onSurface.withValues(alpha: 0.62),
+              color: warn ? const Color(0xFF9B2E35) : cs.onSurface.withValues(alpha: 0.62),
               fontWeight: FontWeight.w800,
               fontSize: 12,
             ),
           ),
           const SizedBox(height: 2),
-          Text(v, style: const TextStyle(fontWeight: FontWeight.w900)),
+          Text(v, style: TextStyle(fontWeight: FontWeight.w900, color: warn ? const Color(0xFF9B2E35) : null)),
         ],
       ),
     );
