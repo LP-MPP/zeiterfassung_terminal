@@ -25,6 +25,7 @@ class _PunchScreenState extends State<PunchScreen> {
   final _functions = FirebaseFunctions.instanceFor(region: 'europe-west3');
 
   List<Employee> _activeEmps = const [];
+  bool _empsLoaded = false;
 
   bool _loggedIn = false;
   bool _busy = false;
@@ -134,6 +135,7 @@ class _PunchScreenState extends State<PunchScreen> {
       if (!mounted) return;
       setState(() {
         _activeEmps = emps;
+        _empsLoaded = true;
 
         if (!_loggedIn && _loginStep == _LoginStep.enterPin) {
           final sel = _normId(_selectedEmpId);
@@ -151,6 +153,7 @@ class _PunchScreenState extends State<PunchScreen> {
       debugPrint('Backend employee load error: $e');
       if (!mounted) return;
       setState(() {
+        _empsLoaded = true;
         _error = 'Mitarbeiter konnten nicht geladen werden. ${_mapBackendError(e)}';
       });
     }
@@ -668,6 +671,18 @@ class _PunchScreenState extends State<PunchScreen> {
 
   Widget _employeePickerGrid() {
     final emps = _activeEmps;
+
+    if (!_empsLoaded) {
+      return _card(
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (emps.isEmpty && _error != null) {
+      return _card(
+        child: InfoBanner(text: _error!, kind: BannerKind.error),
+      );
+    }
 
     if (emps.isEmpty) {
       return _card(
