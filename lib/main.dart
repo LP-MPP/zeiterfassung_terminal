@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -52,6 +53,16 @@ class TimeTerminalApp extends StatelessWidget {
       title: 'Zeiterfassung Terminal',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
+      locale: const Locale('de', 'DE'),
+      supportedLocales: const [
+        Locale('de', 'DE'),
+        Locale('en', 'US'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       home: const TerminalShell(),
     );
   }

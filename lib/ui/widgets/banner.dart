@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../design_tokens.dart';
+
 enum BannerKind { success, error }
 
 class InfoBanner extends StatelessWidget {
@@ -17,14 +19,14 @@ class InfoBanner extends StatelessWidget {
 
     switch (kind) {
       case BannerKind.success:
-        border = const Color(0xFF0D6B52);
-        bg = const Color(0xFFEAF8F2);
+        border = AppTokens.successFg;
+        bg = AppTokens.successBg;
         textColor = const Color(0xFF0A4C3A);
         icon = Icons.check_circle;
         break;
       case BannerKind.error:
-        border = const Color(0xFF9B2E35);
-        bg = const Color(0xFFFCEEF0);
+        border = AppTokens.errorFg;
+        bg = AppTokens.errorBg;
         textColor = const Color(0xFF5D1A22);
         icon = Icons.error;
         break;
@@ -32,17 +34,17 @@ class InfoBanner extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: AppTokens.sm),
+      padding: const EdgeInsets.all(AppTokens.md),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppTokens.borderRadiusMd,
         border: Border.all(color: border, width: 1.2),
         color: bg,
       ),
       child: Row(
         children: [
           Icon(icon, color: border),
-          const SizedBox(width: 10),
+          const SizedBox(width: AppTokens.sm),
           Expanded(
             child: Text(
               text,

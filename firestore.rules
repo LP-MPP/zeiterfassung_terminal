@@ -7,7 +7,8 @@ service cloud.firestore {
 
     function isAdminUser() {
       return isSignedIn()
-        && request.auth.token.email != null;
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
     }
 
     // Terminal app
@@ -45,7 +46,80 @@ service cloud.firestore {
     }
 
     match /audit/{auditId} {
+      allow read: if isAdminUser();
+      // Append-only (GoBD): no updates or deletes, ever.
+      // Public create only for the employee signature confirmation.
+      allow create: if isAdminUser()
+        || request.resource.data.action == 'TIMESHEET_SIGNED_BY_EMPLOYEE';
+      allow update, delete: if false;
+    }
+
+    match /month_approvals/{approvalId} {
       allow read, write: if isAdminUser();
+    }
+
+    // Absence management
+    match /absences/{absenceId} {
+      allow read: if isAdminUser();
+      // Employee requests are created by a session-bound Cloud Function.
+      allow create: if isAdminUser();
+      allow update, delete: if isAdminUser();
+    }
+
+    match /vacation_balances/{balanceId} {
+      // Employees receive only their own balance through a Cloud Function.
+      allow read: if isAdminUser();
+      allow write: if isAdminUser();
+    }
+
+    match /public_holidays/{holidayId} {
+      allow read: if isSignedIn();
+      allow write: if isAdminUser();
+    }
+
+    // Employee profiles (personal data)
+    match /employee_profiles/{profileId} {
+      allow read, write: if isAdminUser();
+    }
+
+    // Onboarding requests — public access only with the exact token (= doc ID).
+    // No list: prevents enumeration of submitted personal data.
+    match /onboarding_requests/{requestId} {
+      allow get: if true;
+      allow list: if isAdminUser();
+      allow create: if isAdminUser();
+      // Public submit: may only fill profileData and set status to SUBMITTED.
+      allow update: if isAdminUser()
+        || (request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['profileData', 'status', 'submittedAt'])
+            && request.resource.data.status == 'SUBMITTED');
+      allow delete: if isAdminUser();
+    }
+
+    // Sign requests — public access only with the exact token (= doc ID).
+    match /sign_requests/{requestId} {
+      allow get: if true;
+      allow list: if isAdminUser();
+      allow create: if isAdminUser();
+      // Public signing: one-time, only the signature fields, status must become SIGNED.
+      allow update: if isAdminUser()
+        || (resource.data.status != 'SIGNED'
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['status', 'signatureDataUrl', 'signedAt'])
+            && request.resource.data.status == 'SIGNED');
+      allow delete: if isAdminUser();
+    }
+
+    // Email trigger (Firebase Extension reads this)
+    match /mail/{mailId} {
+      allow create: if isAdminUser();
+      allow read, update, delete: if false;
+    }
+
+    // Admin users
+    match /admins/{adminId} {
+      allow read: if isAdminUser();
+      allow write: if false; // Only via Cloud Functions
     }
 
     // Default deny

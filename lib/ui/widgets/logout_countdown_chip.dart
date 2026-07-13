@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../design_tokens.dart';
+
 class LogoutCountdownChip extends StatelessWidget {
   final int seconds;
   const LogoutCountdownChip({super.key, required this.seconds});
@@ -12,20 +14,21 @@ class LogoutCountdownChip extends StatelessWidget {
     final label = 'Abmeldung in $mm:$ss';
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: AppTokens.sm, vertical: AppTokens.sm),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: AppTokens.borderRadiusPill,
         border: Border.all(
           width: 1.2,
-          color: warn ? Colors.orange : Colors.grey.shade400,
+          color: warn ? AppTokens.warningBorder : AppTokens.neutralBorder,
         ),
-        color: warn ? Colors.orange.withOpacity(0.12) : Colors.grey.withOpacity(0.08),
+        color: warn ? AppTokens.warningBg : AppTokens.neutralBg,
       ),
       child: Text(
         label,
         style: TextStyle(
-          fontWeight: FontWeight.w600,
-          color: warn ? Colors.orange.shade800 : Colors.black87,
+          fontWeight: FontWeight.w700,
+          fontSize: 13,
+          color: warn ? AppTokens.warningFg : AppTokens.onSurface,
         ),
       ),
     );

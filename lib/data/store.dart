@@ -6,12 +6,16 @@ class Employee {
   final String name;
   final String pinHash;
   final bool active;
+  final int vacationDaysPerYear;
+  final double standardDailyHours;
 
   Employee({
     required this.id,
     required this.name,
     required this.pinHash,
     required this.active,
+    this.vacationDaysPerYear = 25,
+    this.standardDailyHours = 8.0,
   });
 
   static Employee fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -21,6 +25,8 @@ class Employee {
       name: (d['name'] ?? '').toString(),
       pinHash: (d['pinHash'] ?? '').toString(),
       active: (d['active'] ?? true) == true,
+      vacationDaysPerYear: _parseInt(d['vacationDaysPerYear'], 25),
+      standardDailyHours: _parseDouble(d['standardDailyHours'], 8.0),
     );
   }
 }
@@ -87,6 +93,18 @@ class TimeEvent {
 /// Firestore-backed + realtime cached store.
 /// Name remains `InMemoryStore` to keep your existing code changes minimal.
 ///
+int _parseInt(dynamic v, int fallback) {
+  if (v == null) return fallback;
+  if (v is int) return v;
+  return int.tryParse(v.toString()) ?? fallback;
+}
+
+double _parseDouble(dynamic v, double fallback) {
+  if (v == null) return fallback;
+  if (v is num) return v.toDouble();
+  return double.tryParse(v.toString()) ?? fallback;
+}
+
 class InMemoryStore {
   InMemoryStore._();
   static final InMemoryStore instance = InMemoryStore._();
