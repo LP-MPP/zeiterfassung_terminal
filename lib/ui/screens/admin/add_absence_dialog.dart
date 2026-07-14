@@ -17,6 +17,7 @@ class AddAbsenceDialog {
     final isEdit = existing != null;
 
     String type = existing?.type ?? AbsenceType.urlaub;
+    String dayPart = existing?.startDayPart ?? AbsenceDayPart.full;
     DateTimeRange? dateRange = (existing != null)
         ? DateTimeRange(
             start: DateTime.tryParse(existing.startDate) ?? DateTime.now(),
@@ -47,17 +48,22 @@ class AddAbsenceDialog {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setD) {
-            int workDays = 0;
+            double workDays = 0;
             if (dateRange != null) {
-              workDays = countWorkingDays(
-                dayKeyLocal(dateRange!.start),
-                dayKeyLocal(dateRange!.end),
-                holidays,
+              workDays = calculateAbsenceDays(
+                startDate: dayKeyLocal(dateRange!.start),
+                endDate: dayKeyLocal(dateRange!.end),
+                holidays: holidays,
+                startDayPart: dayPart,
+                endDayPart: dayPart,
+                type: type,
               );
             }
 
             return AlertDialog(
-              title: Text(isEdit ? 'Abwesenheit bearbeiten' : 'Neue Abwesenheit'),
+              title: Text(
+                isEdit ? 'Abwesenheit bearbeiten' : 'Neue Abwesenheit',
+              ),
               content: SizedBox(
                 width: 520,
                 child: Column(
@@ -71,14 +77,23 @@ class AddAbsenceDialog {
                         border: OutlineInputBorder(),
                       ),
                       items: const [
-                        DropdownMenuItem(value: AbsenceType.urlaub, child: Text('Urlaub')),
-                        DropdownMenuItem(value: AbsenceType.krankheit, child: Text('Krankheit')),
+                        DropdownMenuItem(
+                          value: AbsenceType.urlaub,
+                          child: Text('Urlaub'),
+                        ),
+                        DropdownMenuItem(
+                          value: AbsenceType.krankheit,
+                          child: Text('Krankheit'),
+                        ),
                       ],
                       onChanged: (v) {
                         if (v != null) {
                           setD(() {
                             type = v;
-                            if (v == AbsenceType.krankheit) autoApprove = true;
+                            if (v == AbsenceType.krankheit) {
+                              autoApprove = true;
+                              dayPart = AbsenceDayPart.full;
+                            }
                           });
                         }
                       },
@@ -97,15 +112,28 @@ class AddAbsenceDialog {
                           saveText: 'Übernehmen',
                           locale: const Locale('de', 'DE'),
                         );
-                        if (picked != null) setD(() => dateRange = picked);
+                        if (picked != null) {
+                          setD(() {
+                            dateRange = picked;
+                            if (dayKeyLocal(picked.start) !=
+                                dayKeyLocal(picked.end)) {
+                              dayPart = AbsenceDayPart.full;
+                            }
+                          });
+                        }
                       },
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.black.withValues(alpha: 0.15)),
+                          border: Border.all(
+                            color: Colors.black.withValues(alpha: 0.15),
+                          ),
                         ),
                         child: Row(
                           children: [
@@ -119,7 +147,9 @@ class AddAbsenceDialog {
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w800,
-                                  color: dateRange != null ? null : Colors.black.withValues(alpha: 0.4),
+                                  color: dateRange != null
+                                      ? null
+                                      : Colors.black.withValues(alpha: 0.4),
                                 ),
                               ),
                             ),
@@ -130,6 +160,41 @@ class AddAbsenceDialog {
 
                     if (dateRange != null) ...[
                       const SizedBox(height: 8),
+                      if (type == AbsenceType.urlaub &&
+                          dayKeyLocal(dateRange!.start) ==
+                              dayKeyLocal(dateRange!.end)) ...[
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Umfang',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment(
+                              value: AbsenceDayPart.full,
+                              label: Text('Ganzer Tag'),
+                            ),
+                            ButtonSegment(
+                              value: AbsenceDayPart.morning,
+                              label: Text('Vormittag'),
+                            ),
+                            ButtonSegment(
+                              value: AbsenceDayPart.afternoon,
+                              label: Text('Nachmittag'),
+                            ),
+                          ],
+                          selected: {dayPart},
+                          onSelectionChanged: (selection) =>
+                              setD(() => dayPart = selection.first),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(10),
@@ -138,8 +203,13 @@ class AddAbsenceDialog {
                           color: const Color(0xFFF5F5F5),
                         ),
                         child: Text(
-                          '$workDays Arbeitstage (exkl. Wochenenden + Feiertage)  •  Resturlaub: ${remaining.toStringAsFixed(0)} Tage',
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                          '${formatAbsenceDays(workDays)} Arbeitstage '
+                          '(exkl. Wochenenden + Feiertage)  •  '
+                          'Resturlaub: ${formatAbsenceDays(remaining)} Tage',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],
@@ -161,7 +231,10 @@ class AddAbsenceDialog {
                       Row(
                         children: [
                           const Expanded(
-                            child: Text('Direkt genehmigen', style: TextStyle(fontWeight: FontWeight.w800)),
+                            child: Text(
+                              'Direkt genehmigen',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
                           ),
                           Switch(
                             value: autoApprove,
@@ -172,13 +245,22 @@ class AddAbsenceDialog {
 
                     if (error != null) ...[
                       const SizedBox(height: 10),
-                      Text(error!, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w700)),
+                      Text(
+                        error!,
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ],
                   ],
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Abbrechen'),
+                ),
                 FilledButton.icon(
                   onPressed: () {
                     if (dateRange == null) {
@@ -186,7 +268,10 @@ class AddAbsenceDialog {
                       return;
                     }
                     if (workDays <= 0) {
-                      setD(() => error = 'Der Zeitraum enthaelt keine Arbeitstage.');
+                      setD(
+                        () =>
+                            error = 'Der Zeitraum enthaelt keine Arbeitstage.',
+                      );
                       return;
                     }
                     Navigator.of(ctx).pop(true);
@@ -206,7 +291,17 @@ class AddAbsenceDialog {
     final adminUid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
     final startKey = dayKeyLocal(dateRange!.start);
     final endKey = dayKeyLocal(dateRange!.end);
-    final workDays = countWorkingDays(startKey, endKey, holidays);
+    final effectiveDayPart = type == AbsenceType.urlaub
+        ? AbsenceDayPart.normalize(dayPart)
+        : AbsenceDayPart.full;
+    final workDays = calculateAbsenceDays(
+      startDate: startKey,
+      endDate: endKey,
+      holidays: holidays,
+      startDayPart: effectiveDayPart,
+      endDayPart: effectiveDayPart,
+      type: type,
+    );
 
     final status = (type == AbsenceType.krankheit || autoApprove)
         ? AbsenceStatus.approved
@@ -217,8 +312,10 @@ class AddAbsenceDialog {
       'type': type,
       'startDate': startKey,
       'endDate': endKey,
+      'startDayPart': effectiveDayPart,
+      'endDayPart': effectiveDayPart,
       'status': status,
-      'vacationDaysConsumed': workDays.toDouble(),
+      'vacationDaysConsumed': workDays,
       'reason': reasonCtrl.text.trim().isEmpty ? null : reasonCtrl.text.trim(),
       'createdByEmployee': false,
       'adminUid': adminUid,
@@ -256,6 +353,8 @@ class AddAbsenceDialog {
             'type': type,
             'startDate': startKey,
             'endDate': endKey,
+            'startDayPart': effectiveDayPart,
+            'endDayPart': effectiveDayPart,
             'status': status,
             'workDays': workDays,
           },
@@ -272,9 +371,9 @@ class AddAbsenceDialog {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Fehler: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Fehler: $e')));
     }
   }
 
