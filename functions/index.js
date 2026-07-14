@@ -631,9 +631,6 @@ function validateAbsenceRange(data) {
   if (!isValidDayKey(startDate) || !isValidDayKey(endDate) || endDate < startDate) {
     throw new HttpsError("invalid-argument", "Der Urlaubszeitraum ist ungültig.");
   }
-  if (type !== "URLAUB" && (startDayPart !== "FULL" || endDayPart !== "FULL")) {
-    throw new HttpsError("invalid-argument", "Halbe Tage sind nur für Urlaub zulässig.");
-  }
   if (startDate === endDate && startDayPart !== endDayPart) {
     throw new HttpsError("invalid-argument", "Bei einem einzelnen Tag muss derselbe Tagesabschnitt gewählt werden.");
   }
@@ -653,8 +650,8 @@ function expandAbsenceDays(data) {
   if (!isValidDayKey(startDate) || !isValidDayKey(endDate) || endDate < startDate) return [];
 
   const type = String(data?.type || "URLAUB");
-  const startDayPart = type === "URLAUB" ? normalizeDayPart(data?.startDayPart) : "FULL";
-  const endDayPart = type === "URLAUB" ? normalizeDayPart(data?.endDayPart) : "FULL";
+  const startDayPart = normalizeDayPart(data?.startDayPart);
+  const endDayPart = normalizeDayPart(data?.endDayPart);
   const singleDay = startDate === endDate;
   const holidayCache = new Map();
   const entries = [];
@@ -672,17 +669,15 @@ function expandAbsenceDays(data) {
 
     let fraction = 1;
     let dayPart = "FULL";
-    if (type === "URLAUB") {
-      if (singleDay && startDayPart !== "FULL") {
-        fraction = 0.5;
-        dayPart = startDayPart;
-      } else if (!singleDay && dayKey === startDate && startDayPart === "AFTERNOON") {
-        fraction = 0.5;
-        dayPart = "AFTERNOON";
-      } else if (!singleDay && dayKey === endDate && endDayPart === "MORNING") {
-        fraction = 0.5;
-        dayPart = "MORNING";
-      }
+    if (singleDay && startDayPart !== "FULL") {
+      fraction = 0.5;
+      dayPart = startDayPart;
+    } else if (!singleDay && dayKey === startDate && startDayPart === "AFTERNOON") {
+      fraction = 0.5;
+      dayPart = "AFTERNOON";
+    } else if (!singleDay && dayKey === endDate && endDayPart === "MORNING") {
+      fraction = 0.5;
+      dayPart = "MORNING";
     }
     entries.push({dayKey, year, fraction, dayPart});
   }

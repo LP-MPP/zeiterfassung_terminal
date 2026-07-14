@@ -92,7 +92,6 @@ class AddAbsenceDialog {
                             type = v;
                             if (v == AbsenceType.krankheit) {
                               autoApprove = true;
-                              dayPart = AbsenceDayPart.full;
                             }
                           });
                         }
@@ -160,9 +159,8 @@ class AddAbsenceDialog {
 
                     if (dateRange != null) ...[
                       const SizedBox(height: 8),
-                      if (type == AbsenceType.urlaub &&
-                          dayKeyLocal(dateRange!.start) ==
-                              dayKeyLocal(dateRange!.end)) ...[
+                      if (dayKeyLocal(dateRange!.start) ==
+                          dayKeyLocal(dateRange!.end)) ...[
                         Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
@@ -291,9 +289,7 @@ class AddAbsenceDialog {
     final adminUid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
     final startKey = dayKeyLocal(dateRange!.start);
     final endKey = dayKeyLocal(dateRange!.end);
-    final effectiveDayPart = type == AbsenceType.urlaub
-        ? AbsenceDayPart.normalize(dayPart)
-        : AbsenceDayPart.full;
+    final effectiveDayPart = AbsenceDayPart.normalize(dayPart);
     final workDays = calculateAbsenceDays(
       startDate: startKey,
       endDate: endKey,

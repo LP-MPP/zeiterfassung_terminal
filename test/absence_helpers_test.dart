@@ -54,7 +54,7 @@ void main() {
       );
     });
 
-    test('keeps sickness full-day', () {
+    test('counts half-day sickness', () {
       expect(
         calculateAbsenceDays(
           startDate: '2026-07-13',
@@ -64,7 +64,7 @@ void main() {
           endDayPart: AbsenceDayPart.morning,
           type: AbsenceType.krankheit,
         ),
-        1,
+        0.5,
       );
     });
   });

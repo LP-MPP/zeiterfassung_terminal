@@ -31,12 +31,8 @@ double calculateAbsenceDays({
   final end = _parseDate(endDate);
   if (start == null || end == null || end.isBefore(start)) return 0;
 
-  final normalizedStart = type == AbsenceType.urlaub
-      ? AbsenceDayPart.normalize(startDayPart)
-      : AbsenceDayPart.full;
-  final normalizedEnd = type == AbsenceType.urlaub
-      ? AbsenceDayPart.normalize(endDayPart)
-      : AbsenceDayPart.full;
+  final normalizedStart = AbsenceDayPart.normalize(startDayPart);
+  final normalizedEnd = AbsenceDayPart.normalize(endDayPart);
   final singleDay = startDate == endDate;
   double count = 0;
 
