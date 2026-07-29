@@ -65,6 +65,10 @@ class AppTokens {
   static const Color sickBg = Color(0xFFFFF8E1);
   static const Color sickBorder = Color(0xFFFFCC80);
 
+  static const Color specialLeaveFg = Color(0xFF6D28D9);
+  static const Color specialLeaveBg = Color(0xFFF3E8FF);
+  static const Color specialLeaveBorder = Color(0xFFC4B5FD);
+
   static const Color holidayFg = infoFg;
   static const Color holidayBg = infoBg;
 
@@ -92,7 +96,9 @@ class AppTokens {
   static final BorderRadius borderRadiusSm = BorderRadius.circular(radiusSm);
   static final BorderRadius borderRadiusMd = BorderRadius.circular(radiusMd);
   static final BorderRadius borderRadiusLg = BorderRadius.circular(radiusLg);
-  static final BorderRadius borderRadiusPill = BorderRadius.circular(radiusPill);
+  static final BorderRadius borderRadiusPill = BorderRadius.circular(
+    radiusPill,
+  );
 
   // ─── Shadows ─────────────────────────────────────────
   static const BoxShadow shadowSm = BoxShadow(

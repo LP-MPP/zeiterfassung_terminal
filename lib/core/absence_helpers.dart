@@ -100,6 +100,7 @@ Future<void> recalculateVacationBalance(String employeeId, int year) async {
   double usedVacation = 0;
   double plannedVacation = 0;
   double sickDays = 0;
+  double specialLeaveDays = 0;
 
   for (final doc in absSnap.docs) {
     final a = Absence.fromDoc(doc);
@@ -132,6 +133,9 @@ Future<void> recalculateVacationBalance(String employeeId, int year) async {
     } else if (a.type == AbsenceType.krankheit &&
         a.status == AbsenceStatus.approved) {
       sickDays += days;
+    } else if (a.type == AbsenceType.sonderurlaub &&
+        a.status == AbsenceStatus.approved) {
+      specialLeaveDays += days;
     }
   }
 
@@ -158,6 +162,7 @@ Future<void> recalculateVacationBalance(String employeeId, int year) async {
     'planned': plannedVacation,
     'remaining': remaining,
     'sickDays': sickDays,
+    'specialLeaveDays': specialLeaveDays,
     'updatedAt': FieldValue.serverTimestamp(),
   });
 }

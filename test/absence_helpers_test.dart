@@ -67,5 +67,19 @@ void main() {
         0.5,
       );
     });
+
+    test('counts half-day paid special leave', () {
+      expect(
+        calculateAbsenceDays(
+          startDate: '2026-07-13',
+          endDate: '2026-07-13',
+          holidays: const {},
+          startDayPart: AbsenceDayPart.afternoon,
+          endDayPart: AbsenceDayPart.afternoon,
+          type: AbsenceType.sonderurlaub,
+        ),
+        0.5,
+      );
+    });
   });
 }

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class AbsenceType {
   static const urlaub = 'URLAUB';
   static const krankheit = 'KRANKHEIT';
+  static const sonderurlaub = 'SONDERURLAUB';
 
   static String label(String type) {
     switch (type) {
@@ -11,6 +12,8 @@ class AbsenceType {
         return 'Urlaub';
       case krankheit:
         return 'Krankheit';
+      case sonderurlaub:
+        return 'Sonderurlaub (bezahlt)';
       default:
         return type;
     }
@@ -62,17 +65,37 @@ class AbsenceDayPart {
   }
 }
 
-/// Represents an absence record (vacation or sick leave).
+class SpecialLeaveCategory {
+  static String label(String? category) {
+    switch (category) {
+      case 'HOCHZEIT':
+        return 'Hochzeit';
+      case 'TRAUERFALL':
+        return 'Trauerfall';
+      case 'GEBURT':
+        return 'Geburt';
+      case 'UMZUG':
+        return 'Umzug';
+      case 'SONSTIGES':
+        return 'Sonstiges';
+      default:
+        return '';
+    }
+  }
+}
+
+/// Represents an absence record (vacation, paid special leave or sick leave).
 class Absence {
   final String id;
   final String employeeId;
-  final String type; // URLAUB | KRANKHEIT
+  final String type; // URLAUB | KRANKHEIT | SONDERURLAUB
   final String startDate; // dayKey YYYY-MM-DD, inclusive
   final String endDate; // dayKey YYYY-MM-DD, inclusive
   final String startDayPart; // FULL | MORNING | AFTERNOON
   final String endDayPart; // FULL | MORNING | AFTERNOON
   final String status; // PENDING | APPROVED | REJECTED | CANCELLED
   final double vacationDaysConsumed; // working days excl. weekends/holidays
+  final String? specialLeaveCategory;
   final String? reason;
   final bool createdByEmployee; // true = terminal, false = admin
   final String? adminUid;
@@ -91,6 +114,7 @@ class Absence {
     this.endDayPart = AbsenceDayPart.full,
     required this.status,
     required this.vacationDaysConsumed,
+    this.specialLeaveCategory,
     this.reason,
     this.createdByEmployee = false,
     this.adminUid,
@@ -115,6 +139,7 @@ class Absence {
       endDayPart: AbsenceDayPart.normalize(d['endDayPart']),
       status: (d['status'] ?? AbsenceStatus.pending).toString(),
       vacationDaysConsumed: (d['vacationDaysConsumed'] ?? 0).toDouble(),
+      specialLeaveCategory: d['specialLeaveCategory']?.toString(),
       reason: d['reason']?.toString(),
       createdByEmployee: d['createdByEmployee'] == true,
       adminUid: d['adminUid']?.toString(),
@@ -138,6 +163,7 @@ class Absence {
     'endDayPart': endDayPart,
     'status': status,
     'vacationDaysConsumed': vacationDaysConsumed,
+    'specialLeaveCategory': specialLeaveCategory,
     'reason': reason,
     'createdByEmployee': createdByEmployee,
     'adminUid': adminUid,

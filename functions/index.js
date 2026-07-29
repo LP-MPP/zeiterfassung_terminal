@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const admin = require("firebase-admin");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onDocumentWritten} = require("firebase-functions/v2/firestore");
+const {addAbsenceToBalance} = require("./absence_balance");
 
 admin.initializeApp();
 
@@ -406,6 +407,7 @@ exports.getEmployeeVacationOverview = onCall({region: REGION}, async (request) =
     planned: 0,
     remaining: entitlement,
     sickDays: 0,
+    specialLeaveDays: 0,
   };
 
   const yearStart = `${year}-01-01`;
@@ -425,6 +427,7 @@ exports.getEmployeeVacationOverview = onCall({region: REGION}, async (request) =
         endDayPart: normalizeDayPart(data.endDayPart),
         status: String(data.status || "PENDING"),
         vacationDaysConsumed: Number(data.vacationDaysConsumed ?? calculateAbsenceDays(data)),
+        specialLeaveCategory: data.specialLeaveCategory || null,
         reason: data.reason || null,
         rejectionReason: data.rejectionReason || null,
       }))
@@ -440,6 +443,7 @@ exports.getEmployeeVacationOverview = onCall({region: REGION}, async (request) =
       planned: Number(balance.planned ?? 0),
       remaining: Number(balance.remaining ?? entitlement),
       sickDays: Number(balance.sickDays ?? 0),
+      specialLeaveDays: Number(balance.specialLeaveDays ?? 0),
     },
     absences,
   };
@@ -619,6 +623,9 @@ function validateAbsenceRange(data) {
   const startDate = String(data?.startDate || "");
   const endDate = String(data?.endDate || "");
   const type = String(data?.type || "URLAUB");
+  if (!["URLAUB", "KRANKHEIT", "SONDERURLAUB"].includes(type)) {
+    throw new HttpsError("invalid-argument", "Abwesenheitstyp ist ungültig.");
+  }
   const startDayPart = normalizeDayPart(data?.startDayPart);
   const endDayPart = normalizeDayPart(data?.endDayPart);
 
@@ -701,9 +708,7 @@ async function recalculateVacationBalance(employeeId, year) {
       .where("employeeId", "==", employeeId)
       .get();
 
-  let used = 0;
-  let planned = 0;
-  let sickDays = 0;
+  let totals = {used: 0, planned: 0, sickDays: 0, specialLeaveDays: 0};
 
   for (const doc of absSnap.docs) {
     const a = doc.data() || {};
@@ -716,12 +721,7 @@ async function recalculateVacationBalance(employeeId, year) {
 
     const type = String(a.type || "");
     const status = String(a.status || "");
-    if (type === "URLAUB") {
-      if (status === "APPROVED") used += days;
-      else if (status === "PENDING") planned += days;
-    } else if (type === "KRANKHEIT" && status === "APPROVED") {
-      sickDays += days;
-    }
+    totals = addAbsenceToBalance(totals, {type, status, days});
   }
 
   let carryOver = 0;
@@ -732,17 +732,18 @@ async function recalculateVacationBalance(employeeId, year) {
     if (prevRemaining > 0) carryOver = prevRemaining;
   }
 
-  const remaining = entitlement + carryOver - used;
+  const remaining = entitlement + carryOver - totals.used;
 
   await db.collection("vacation_balances").doc(`${employeeId}_${year}`).set({
     employeeId,
     year,
     entitlement,
     carryOver,
-    used,
-    planned,
+    used: totals.used,
+    planned: totals.planned,
     remaining,
-    sickDays,
+    sickDays: totals.sickDays,
+    specialLeaveDays: totals.specialLeaveDays,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 }

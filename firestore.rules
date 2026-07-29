@@ -11,6 +11,23 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
     }
 
+    function isValidAbsenceType(data) {
+      return data.type in ['URLAUB', 'KRANKHEIT', 'SONDERURLAUB'];
+    }
+
+    function isValidSpecialLeave(data) {
+      return data.type != 'SONDERURLAUB'
+        || (data.createdByEmployee == false
+          && data.status in ['APPROVED', 'CANCELLED']
+          && data.specialLeaveCategory in [
+            'HOCHZEIT',
+            'TRAUERFALL',
+            'GEBURT',
+            'UMZUG',
+            'SONSTIGES'
+          ]);
+    }
+
     // Terminal app
     match /employees/{employeeId} {
       allow read, create, update: if isAdminUser();
@@ -62,8 +79,17 @@ service cloud.firestore {
     match /absences/{absenceId} {
       allow read: if isAdminUser();
       // Employee requests are created by a session-bound Cloud Function.
-      allow create: if isAdminUser();
-      allow update, delete: if isAdminUser();
+      // Paid special leave can only be granted directly by an active admin.
+      allow create: if isAdminUser()
+        && isValidAbsenceType(request.resource.data)
+        && isValidSpecialLeave(request.resource.data)
+        && (request.resource.data.type != 'SONDERURLAUB'
+          || (request.resource.data.status == 'APPROVED'
+            && request.resource.data.adminUid == request.auth.uid));
+      allow update: if isAdminUser()
+        && isValidAbsenceType(request.resource.data)
+        && isValidSpecialLeave(request.resource.data);
+      allow delete: if isAdminUser();
     }
 
     match /vacation_balances/{balanceId} {

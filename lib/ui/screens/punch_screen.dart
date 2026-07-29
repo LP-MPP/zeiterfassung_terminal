@@ -1383,6 +1383,7 @@ class _PunchScreenState extends State<PunchScreen> {
     double used = 0;
     double planned = 0;
     double sick = 0;
+    double specialLeave = 0;
     int entitlement = 25;
     double carryOver = 0;
 
@@ -1407,6 +1408,7 @@ class _PunchScreenState extends State<PunchScreen> {
       used = (balance['used'] ?? 0).toDouble();
       planned = (balance['planned'] ?? 0).toDouble();
       sick = (balance['sickDays'] ?? 0).toDouble();
+      specialLeave = (balance['specialLeaveDays'] ?? 0).toDouble();
       entitlement = (balance['entitlement'] ?? 25).toInt();
       carryOver = (balance['carryOver'] ?? 0).toDouble();
     } catch (e) {
@@ -1492,6 +1494,7 @@ class _PunchScreenState extends State<PunchScreen> {
                     planned: planned,
                     remaining: remaining,
                     sick: sick,
+                    specialLeave: specialLeave,
                   ),
                   const SizedBox(height: AppTokens.lg),
 
@@ -1575,6 +1578,7 @@ class _PunchScreenState extends State<PunchScreen> {
     required double planned,
     required double remaining,
     required double sick,
+    required double specialLeave,
   }) {
     final isLow = remaining <= 3;
     final total = entitlement + carryOver;
@@ -1684,6 +1688,12 @@ class _PunchScreenState extends State<PunchScreen> {
                   formatAbsenceDays(sick),
                   AppTokens.sickFg,
                 ),
+              if (specialLeave > 0)
+                _balanceMetric(
+                  'Sonderurlaub',
+                  formatAbsenceDays(specialLeave),
+                  AppTokens.specialLeaveFg,
+                ),
             ],
           ),
         ],
@@ -1719,7 +1729,23 @@ class _PunchScreenState extends State<PunchScreen> {
   Widget _absenceRow(Absence a) {
     // Type info
     final isVacation = a.type == AbsenceType.urlaub;
-    final typeLabel = isVacation ? 'Urlaub' : 'Krankheit';
+    final isSpecialLeave = a.type == AbsenceType.sonderurlaub;
+    final typeLabel = AbsenceType.label(a.type);
+    final typeBg = isVacation
+        ? AppTokens.successBg
+        : isSpecialLeave
+        ? AppTokens.specialLeaveBg
+        : AppTokens.sickBg;
+    final typeFg = isVacation
+        ? AppTokens.successFg
+        : isSpecialLeave
+        ? AppTokens.specialLeaveFg
+        : AppTokens.sickFg;
+    final typeIcon = isVacation
+        ? Icons.beach_access
+        : isSpecialLeave
+        ? Icons.card_giftcard
+        : Icons.medical_services;
 
     // Status pill
     StatusPill statusPill;
@@ -1772,15 +1798,8 @@ class _PunchScreenState extends State<PunchScreen> {
           Container(
             width: 36,
             height: 36,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isVacation ? AppTokens.successBg : AppTokens.sickBg,
-            ),
-            child: Icon(
-              isVacation ? Icons.beach_access : Icons.medical_services,
-              size: 18,
-              color: isVacation ? AppTokens.successFg : AppTokens.sickFg,
-            ),
+            decoration: BoxDecoration(shape: BoxShape.circle, color: typeBg),
+            child: Icon(typeIcon, size: 18, color: typeFg),
           ),
           const SizedBox(width: AppTokens.md),
 
@@ -1814,6 +1833,18 @@ class _PunchScreenState extends State<PunchScreen> {
                     color: AppTokens.onSurfaceMuted,
                   ),
                 ),
+                if (isSpecialLeave &&
+                    SpecialLeaveCategory.label(
+                      a.specialLeaveCategory,
+                    ).isNotEmpty)
+                  Text(
+                    SpecialLeaveCategory.label(a.specialLeaveCategory),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTokens.specialLeaveFg,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 if (dayPartLabel != null)
                   Text(
                     dayPartLabel,
