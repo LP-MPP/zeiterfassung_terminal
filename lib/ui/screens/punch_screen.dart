@@ -449,6 +449,7 @@ class _PunchScreenState extends State<PunchScreen> {
     final result = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
+        scrollable: true,
         title: const Text('Was hast du heute gemacht?'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -461,8 +462,8 @@ class _PunchScreenState extends State<PunchScreen> {
             TextField(
               controller: controller,
               autofocus: true,
-              minLines: 3,
-              maxLines: 5,
+              minLines: 2,
+              maxLines: 4,
               maxLength: 300,
               textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(
@@ -962,12 +963,13 @@ class _PunchScreenState extends State<PunchScreen> {
                 children: [
                   Text(
                     e.name,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w900,
                       letterSpacing: -0.2,
+                      height: 1.1,
                     ),
                   ),
                   const SizedBox(height: AppTokens.xs),
@@ -1062,6 +1064,12 @@ class _PunchScreenState extends State<PunchScreen> {
                 SizedBox(
                   height: compact ? 44 : 48,
                   child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
                     onPressed: _busy ? null : _backToEmployeePick,
                     icon: const Icon(Icons.arrow_back),
                     label: const Text(
@@ -1989,6 +1997,7 @@ class _PunchScreenState extends State<PunchScreen> {
         return StatefulBuilder(
           builder: (ctx, setD) {
             return AlertDialog(
+              scrollable: true,
               title: const Text('PIN ändern'),
               content: SizedBox(
                 width: 360,
