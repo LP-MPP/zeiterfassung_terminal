@@ -39,6 +39,14 @@ void main() {
     );
 
     expect(find.byType(Scrollable), findsNothing);
+    final buttons = find.byType(FilledButton);
+    expect(buttons, findsNWidgets(4));
+    for (var index = 0; index < 4; index++) {
+      expect(
+        tester.getSize(buttons.at(index)).height,
+        greaterThanOrEqualTo(50),
+      );
+    }
     for (final label in ['Kommen', 'Gehen', 'Pause Start', 'Pause Ende']) {
       final rect = tester.getRect(find.text(label));
       expect(rect.top, greaterThanOrEqualTo(340));

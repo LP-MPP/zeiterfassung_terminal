@@ -31,65 +31,82 @@ class PunchActionGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final spacing = compact ? 8.0 : 10.0;
+    final maximumGridHeight = compact ? 180.0 : 240.0;
 
-    return Column(
-      children: [
-        Expanded(
-          child: Row(
-            children: [
-              Expanded(
-                child: _ActionButton(
-                  label: 'Kommen',
-                  icon: Icons.login,
-                  enabled: canPunchIn,
-                  busy: busy,
-                  compact: compact,
-                  onTap: onPunchIn,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : maximumGridHeight;
+        final gridHeight = availableHeight.clamp(0.0, maximumGridHeight);
+
+        return Center(
+          child: SizedBox(
+            height: gridHeight,
+            child: Column(
+              children: [
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _ActionButton(
+                          label: 'Kommen',
+                          icon: Icons.login,
+                          enabled: canPunchIn,
+                          busy: busy,
+                          compact: compact,
+                          onTap: onPunchIn,
+                        ),
+                      ),
+                      SizedBox(width: spacing),
+                      Expanded(
+                        child: _ActionButton(
+                          label: 'Gehen',
+                          icon: Icons.logout,
+                          enabled: canPunchOut,
+                          busy: busy,
+                          compact: compact,
+                          onTap: onPunchOut,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              SizedBox(width: spacing),
-              Expanded(
-                child: _ActionButton(
-                  label: 'Gehen',
-                  icon: Icons.logout,
-                  enabled: canPunchOut,
-                  busy: busy,
-                  compact: compact,
-                  onTap: onPunchOut,
+                SizedBox(height: spacing),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _ActionButton(
+                          label: 'Pause Start',
+                          icon: Icons.pause,
+                          enabled: canBreakStart,
+                          busy: busy,
+                          compact: compact,
+                          onTap: onBreakStart,
+                        ),
+                      ),
+                      SizedBox(width: spacing),
+                      Expanded(
+                        child: _ActionButton(
+                          label: 'Pause Ende',
+                          icon: Icons.play_arrow,
+                          enabled: canBreakEnd,
+                          busy: busy,
+                          compact: compact,
+                          onTap: onBreakEnd,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        SizedBox(height: spacing),
-        Expanded(
-          child: Row(
-            children: [
-              Expanded(
-                child: _ActionButton(
-                  label: 'Pause Start',
-                  icon: Icons.pause,
-                  enabled: canBreakStart,
-                  busy: busy,
-                  compact: compact,
-                  onTap: onBreakStart,
-                ),
-              ),
-              SizedBox(width: spacing),
-              Expanded(
-                child: _ActionButton(
-                  label: 'Pause Ende',
-                  icon: Icons.play_arrow,
-                  enabled: canBreakEnd,
-                  busy: busy,
-                  compact: compact,
-                  onTap: onBreakEnd,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -113,36 +130,38 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton(
-      onPressed: busy || !enabled ? null : onTap,
-      style: FilledButton.styleFrom(
-        backgroundColor: enabled ? AppTokens.primary : AppTokens.surfaceMuted,
-        foregroundColor: enabled ? Colors.white : AppTokens.onSurfaceFaint,
-        padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 12),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-        shape: RoundedRectangleBorder(borderRadius: AppTokens.borderRadiusLg),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: compact ? 17 : 20),
-          SizedBox(width: compact ? 6 : AppTokens.sm),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                label,
-                maxLines: 1,
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: compact ? 13 : 15,
+    return SizedBox.expand(
+      child: FilledButton(
+        onPressed: busy || !enabled ? null : onTap,
+        style: FilledButton.styleFrom(
+          backgroundColor: enabled ? AppTokens.primary : AppTokens.surfaceMuted,
+          foregroundColor: enabled ? Colors.white : AppTokens.onSurfaceFaint,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.standard,
+          shape: RoundedRectangleBorder(borderRadius: AppTokens.borderRadiusLg),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: compact ? 20 : 22),
+            SizedBox(width: compact ? 7 : AppTokens.sm),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: compact ? 15 : 16,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
