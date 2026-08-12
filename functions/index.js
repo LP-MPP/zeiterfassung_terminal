@@ -3,6 +3,7 @@ const admin = require("firebase-admin");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onDocumentWritten} = require("firebase-functions/v2/firestore");
 const {addAbsenceToBalance} = require("./absence_balance");
+const {preparePunchNote} = require("./punch_note");
 
 admin.initializeApp();
 
@@ -221,6 +222,7 @@ exports.authenticateEmployeePin = onCall({region: REGION}, async (request) => {
     uid: request.auth.uid,
     employeeId,
     employeeName: String(employee.name || ""),
+    employmentType: String(employee.employmentType || "FESTANSTELLUNG"),
     terminalId,
     expiresAtMs,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -230,6 +232,7 @@ exports.authenticateEmployeePin = onCall({region: REGION}, async (request) => {
     sessionId: sessionRef.id,
     employeeId,
     employeeName: String(employee.name || ""),
+    employmentType: String(employee.employmentType || "FESTANSTELLUNG"),
     lastEventType,
     expiresAtMs,
   };
@@ -315,6 +318,7 @@ async function getValidatedTerminalSession(request) {
   if (!employeeSnap.exists || employeeSnap.data()?.active !== true) {
     throw new HttpsError("failed-precondition", "Mitarbeiter ist nicht mehr aktiv.");
   }
+
   return {employeeId, employee: employeeSnap.data() || {}, sessionRef};
 }
 
@@ -893,6 +897,13 @@ exports.createPunchEvent = onCall({region: REGION}, async (request) => {
     throw new HttpsError("failed-precondition", "Mitarbeiter ist nicht mehr aktiv.");
   }
 
+  const employee = employeeSnap.data() || {};
+  const employmentType = String(employee.employmentType || "FESTANSTELLUNG");
+  const preparedNote = preparePunchNote(request.data?.note, eventType, employmentType);
+  if (!preparedNote.ok) {
+    throw new HttpsError("invalid-argument", preparedNote.message);
+  }
+
   const lastEventType = await getLastEventType(employeeId);
   if (!isAllowed(lastEventType, eventType)) {
     throw new HttpsError("failed-precondition", "Aktion ist in diesem Zustand nicht zulässig.");
@@ -900,7 +911,7 @@ exports.createPunchEvent = onCall({region: REGION}, async (request) => {
 
   const timestampUtcMs = Date.now();
   const eventRef = db.collection("events").doc();
-  await eventRef.set({
+  const eventData = {
     employeeId,
     eventType,
     timestampUtcMs,
@@ -908,7 +919,9 @@ exports.createPunchEvent = onCall({region: REGION}, async (request) => {
     source: "PIN",
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     dayKey: dayKeyBerlinFromUtcMs(timestampUtcMs),
-  });
+  };
+  if (preparedNote.note) eventData.note = preparedNote.note;
+  await eventRef.set(eventData);
 
   await db.collection("employee_state").doc(employeeId).set({
     employeeId,

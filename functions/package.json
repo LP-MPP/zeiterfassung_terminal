@@ -6,7 +6,7 @@
     "node": "22"
   },
   "scripts": {
-    "test": "node --test absence_balance.test.js"
+    "test": "node --test *.test.js"
   },
   "dependencies": {
     "firebase-admin": "^13.10.0",

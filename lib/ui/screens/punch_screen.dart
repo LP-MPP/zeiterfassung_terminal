@@ -42,6 +42,7 @@ class _PunchScreenState extends State<PunchScreen> {
   String? _employeeId;
   String? _employeeName;
   String? _sessionId;
+  String? _employmentType;
 
   _LoginStep _loginStep = _LoginStep.pickEmployee;
   String? _selectedEmpId;
@@ -268,6 +269,7 @@ class _PunchScreenState extends State<PunchScreen> {
       _employeeId = null;
       _employeeName = null;
       _sessionId = null;
+      _employmentType = null;
 
       _lastEventType = null;
       _clearVacationInfo();
@@ -355,6 +357,8 @@ class _PunchScreenState extends State<PunchScreen> {
         _employeeId = loggedInEmpId;
         _employeeName = data['employeeName']?.toString() ?? emp.name;
         _sessionId = sessionId;
+        _employmentType =
+            data['employmentType']?.toString() ?? 'FESTANSTELLUNG';
         _lastEventType = lastEventType;
 
         _loginStep = _LoginStep.pickEmployee;
@@ -439,7 +443,65 @@ class _PunchScreenState extends State<PunchScreen> {
 
   // ── Punch ──
 
-  Future<void> _punch(String eventType) async {
+  Future<String?> _askForActivityNote() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Was hast du heute gemacht?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Die Angabe ist optional und wird zusammen mit dem Auschecken gespeichert.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              minLines: 3,
+              maxLines: 5,
+              maxLength: 300,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Tätigkeit (optional)',
+                hintText: 'z. B. Bestellungen verpackt und Lager aufgeräumt',
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton.icon(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            icon: const Icon(Icons.logout),
+            label: const Text('Auschecken'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  Future<void> _handlePunch(String eventType) async {
+    if (eventType == 'OUT' && _employmentType == 'MINIJOB') {
+      final note = await _askForActivityNote();
+      if (note == null || !mounted) return;
+      await _punch(eventType, note: note);
+      return;
+    }
+    await _punch(eventType);
+  }
+
+  Future<void> _punch(String eventType, {String? note}) async {
     if (_employeeId == null || _sessionId == null) return;
 
     setState(() {
@@ -454,6 +516,7 @@ class _PunchScreenState extends State<PunchScreen> {
         'sessionId': _sessionId,
         'eventType': eventType,
         'terminalId': terminalId,
+        if (note != null) 'note': note,
       });
 
       final data = Map<String, dynamic>.from((result.data as Map?) ?? const {});
@@ -1265,28 +1328,28 @@ class _PunchScreenState extends State<PunchScreen> {
                       icon: Icons.login,
                       enabled: canPunchIn,
                       compact: compact,
-                      onTap: () => _punch('IN'),
+                      onTap: () => _handlePunch('IN'),
                     ),
                     _gridAction(
                       label: 'Gehen',
                       icon: Icons.logout,
                       enabled: canPunchOut,
                       compact: compact,
-                      onTap: () => _punch('OUT'),
+                      onTap: () => _handlePunch('OUT'),
                     ),
                     _gridAction(
                       label: 'Pause Start',
                       icon: Icons.pause,
                       enabled: canBreakStart,
                       compact: compact,
-                      onTap: () => _punch('BREAK_START'),
+                      onTap: () => _handlePunch('BREAK_START'),
                     ),
                     _gridAction(
                       label: 'Pause Ende',
                       icon: Icons.play_arrow,
                       enabled: canBreakEnd,
                       compact: compact,
-                      onTap: () => _punch('BREAK_END'),
+                      onTap: () => _handlePunch('BREAK_END'),
                     ),
                   ],
                 );
