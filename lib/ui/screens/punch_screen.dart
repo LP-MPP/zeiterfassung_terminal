@@ -16,6 +16,7 @@ import '../widgets/app_card.dart';
 import '../widgets/banner.dart';
 import '../widgets/logout_countdown_chip.dart';
 import '../widgets/metric_chip.dart';
+import '../widgets/punch_action_grid.dart';
 import '../widgets/status_pill.dart';
 import 'idle_clock_screen.dart';
 
@@ -1239,11 +1240,14 @@ class _PunchScreenState extends State<PunchScreen> {
     bool canBreakEnd,
   ) {
     final compact = _isCompact(context);
+    final landscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final dense = compact || landscape;
     final secs = _secondsToLogout();
     final glowColor = _currentGlowColor();
 
     return AppCard(
-      padding: EdgeInsets.all(compact ? 14 : AppTokens.lg),
+      padding: EdgeInsets.all(dense ? 10 : AppTokens.lg),
       glowColor: glowColor,
       glowOpacity: 0.18,
       child: Column(
@@ -1252,32 +1256,53 @@ class _PunchScreenState extends State<PunchScreen> {
           Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${_employeeName ?? ''} (${_employeeId ?? ''})',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.2,
+                child: dense
+                    ? Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              '${_employeeName ?? ''} (${_employeeId ?? ''})',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppTokens.sm),
+                          _statusPillForState(),
+                        ],
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${_employeeName ?? ''} (${_employeeId ?? ''})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: AppTokens.xs),
+                          _statusPillForState(),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: AppTokens.xs),
-                    _statusPillForState(),
-                  ],
-                ),
               ),
+              const SizedBox(width: AppTokens.sm),
               LogoutCountdownChip(seconds: secs),
             ],
           ),
-          const SizedBox(height: AppTokens.sm),
+          SizedBox(height: dense ? AppTokens.xs : AppTokens.sm),
 
           // Vacation info bar
-          if (_vacRemaining != null) _vacationInfoBar(),
-          if (_vacRemaining != null) const SizedBox(height: AppTokens.sm),
+          if (_vacRemaining != null) _vacationInfoBar(dense: dense),
+          if (_vacRemaining != null)
+            SizedBox(height: dense ? AppTokens.xs : AppTokens.sm),
 
           // Warnings
           Builder(
@@ -1290,86 +1315,63 @@ class _PunchScreenState extends State<PunchScreen> {
                 warn = 'Hinweis: Pause läuft (kein Pause Ende erfasst).';
               }
               if (warn == null) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(top: AppTokens.xs),
-                child: InfoBanner(text: warn, kind: BannerKind.error),
+              return InfoBanner(
+                text: warn,
+                kind: BannerKind.error,
+                dense: dense,
               );
             },
           ),
 
-          SizedBox(height: compact ? AppTokens.sm : AppTokens.md),
+          SizedBox(height: dense ? AppTokens.xs : AppTokens.sm),
 
           if (_success != null)
-            InfoBanner(text: _success!, kind: BannerKind.success),
-          if (_error != null) InfoBanner(text: _error!, kind: BannerKind.error),
-          SizedBox(height: compact ? AppTokens.sm : AppTokens.md),
+            InfoBanner(text: _success!, kind: BannerKind.success, dense: dense),
+          if (_error != null)
+            InfoBanner(text: _error!, kind: BannerKind.error, dense: dense),
+          SizedBox(height: dense ? AppTokens.xs : AppTokens.sm),
 
           Expanded(
-            child: LayoutBuilder(
-              builder: (context, c) {
-                const spacing = 10.0;
-                final tileWidth = (c.maxWidth - spacing) / 2;
-                final targetTileHeight = ((c.maxHeight - spacing) / 2)
-                    .clamp(56.0, 220.0)
-                    .toDouble();
-                final ratio = (tileWidth / targetTileHeight)
-                    .clamp(1.6, 7.0)
-                    .toDouble();
-
-                return GridView.count(
-                  crossAxisCount: 2,
-                  physics: const BouncingScrollPhysics(),
-                  crossAxisSpacing: spacing,
-                  mainAxisSpacing: spacing,
-                  childAspectRatio: ratio,
-                  children: [
-                    _gridAction(
-                      label: 'Kommen',
-                      icon: Icons.login,
-                      enabled: canPunchIn,
-                      compact: compact,
-                      onTap: () => _handlePunch('IN'),
-                    ),
-                    _gridAction(
-                      label: 'Gehen',
-                      icon: Icons.logout,
-                      enabled: canPunchOut,
-                      compact: compact,
-                      onTap: () => _handlePunch('OUT'),
-                    ),
-                    _gridAction(
-                      label: 'Pause Start',
-                      icon: Icons.pause,
-                      enabled: canBreakStart,
-                      compact: compact,
-                      onTap: () => _handlePunch('BREAK_START'),
-                    ),
-                    _gridAction(
-                      label: 'Pause Ende',
-                      icon: Icons.play_arrow,
-                      enabled: canBreakEnd,
-                      compact: compact,
-                      onTap: () => _handlePunch('BREAK_END'),
-                    ),
-                  ],
-                );
+            child: PunchActionGrid(
+              canPunchIn: canPunchIn,
+              canPunchOut: canPunchOut,
+              canBreakStart: canBreakStart,
+              canBreakEnd: canBreakEnd,
+              busy: _busy,
+              compact: dense,
+              onPunchIn: () {
+                _touch();
+                _handlePunch('IN');
+              },
+              onPunchOut: () {
+                _touch();
+                _handlePunch('OUT');
+              },
+              onBreakStart: () {
+                _touch();
+                _handlePunch('BREAK_START');
+              },
+              onBreakEnd: () {
+                _touch();
+                _handlePunch('BREAK_END');
               },
             ),
           ),
-          SizedBox(height: compact ? AppTokens.sm : AppTokens.md),
+          SizedBox(height: dense ? 6 : AppTokens.md),
           Row(
             children: [
               Expanded(
                 child: SizedBox(
-                  height: compact ? 40 : 44,
+                  height: dense ? 38 : 44,
                   child: OutlinedButton.icon(
+                    style: _compactOutlinedActionStyle(dense),
                     onPressed: _busy ? null : _showAbsenceOverview,
                     icon: const Icon(Icons.calendar_month, size: 18),
                     label: Text(
                       'Urlaub Übersicht',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: compact ? 12 : 13,
+                        fontSize: dense ? 12 : 13,
                       ),
                     ),
                   ),
@@ -1378,15 +1380,16 @@ class _PunchScreenState extends State<PunchScreen> {
               const SizedBox(width: AppTokens.sm),
               Expanded(
                 child: SizedBox(
-                  height: compact ? 40 : 44,
+                  height: dense ? 38 : 44,
                   child: OutlinedButton.icon(
+                    style: _compactOutlinedActionStyle(dense),
                     onPressed: _busy ? null : _showVacationRequest,
                     icon: const Icon(Icons.event_busy, size: 18),
                     label: Text(
                       'Urlaub beantragen',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: compact ? 12 : 13,
+                        fontSize: dense ? 12 : 13,
                       ),
                     ),
                   ),
@@ -1394,25 +1397,26 @@ class _PunchScreenState extends State<PunchScreen> {
               ),
               const SizedBox(width: AppTokens.sm),
               SizedBox(
-                height: compact ? 40 : 44,
+                height: dense ? 38 : 44,
                 child: OutlinedButton.icon(
+                  style: _compactOutlinedActionStyle(dense),
                   onPressed: _busy ? null : _showChangePinDialog,
                   icon: const Icon(Icons.lock_outline, size: 18),
                   label: Text(
                     'PIN',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      fontSize: compact ? 12 : 13,
+                      fontSize: dense ? 12 : 13,
                     ),
                   ),
                 ),
               ),
             ],
           ),
-          SizedBox(height: compact ? AppTokens.sm : AppTokens.md),
+          SizedBox(height: dense ? 6 : AppTokens.md),
           SizedBox(
             width: double.infinity,
-            height: compact ? 40 : 44,
+            height: dense ? 38 : 44,
             child: FilledButton.icon(
               onPressed: _busy ? null : _logout,
               icon: const Icon(Icons.exit_to_app, size: 18),
@@ -1420,17 +1424,33 @@ class _PunchScreenState extends State<PunchScreen> {
                 'Abmelden',
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  fontSize: compact ? 13 : 14,
+                  fontSize: dense ? 13 : 14,
                 ),
               ),
               style: FilledButton.styleFrom(
                 backgroundColor: AppTokens.onSurface.withValues(alpha: 0.08),
                 foregroundColor: AppTokens.onSurface,
+                padding: EdgeInsets.symmetric(
+                  horizontal: dense ? 12 : AppTokens.lg,
+                ),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  ButtonStyle _compactOutlinedActionStyle(bool dense) {
+    if (!dense) return const ButtonStyle();
+    return OutlinedButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      minimumSize: Size.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
     );
   }
 
@@ -2349,7 +2369,7 @@ class _PunchScreenState extends State<PunchScreen> {
     return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
   }
 
-  Widget _vacationInfoBar() {
+  Widget _vacationInfoBar({bool dense = false}) {
     final remaining = _vacRemaining ?? 0;
     final used = _vacUsed ?? 0;
     final planned = _vacPlanned ?? 0;
@@ -2367,7 +2387,7 @@ class _PunchScreenState extends State<PunchScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppTokens.md),
+      padding: EdgeInsets.all(dense ? 8 : AppTokens.md),
       decoration: BoxDecoration(
         borderRadius: AppTokens.borderRadiusMd,
         color: AppTokens.surfaceCard,
@@ -2419,13 +2439,13 @@ class _PunchScreenState extends State<PunchScreen> {
               ),
             ],
           ),
-          const SizedBox(height: AppTokens.sm),
+          SizedBox(height: dense ? 5 : AppTokens.sm),
 
           // Progress bar
           ClipRRect(
             borderRadius: AppTokens.borderRadiusPill,
             child: SizedBox(
-              height: 10,
+              height: dense ? 7 : 10,
               child: Stack(
                 children: [
                   // Background
@@ -2459,12 +2479,12 @@ class _PunchScreenState extends State<PunchScreen> {
               ),
             ),
           ),
-          const SizedBox(height: AppTokens.sm),
+          SizedBox(height: dense ? 5 : AppTokens.sm),
 
           // Metrics row
           Wrap(
-            spacing: AppTokens.lg,
-            runSpacing: AppTokens.xs,
+            spacing: dense ? AppTokens.md : AppTokens.lg,
+            runSpacing: dense ? 2 : AppTokens.xs,
             children: [
               MetricChip(
                 label: 'Anspruch',
@@ -2494,50 +2514,6 @@ class _PunchScreenState extends State<PunchScreen> {
                   valueColor: AppTokens.infoFg,
                 ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _gridAction({
-    required String label,
-    required IconData icon,
-    required bool enabled,
-    required bool compact,
-    required VoidCallback onTap,
-  }) {
-    return FilledButton(
-      onPressed: (_busy || !enabled)
-          ? null
-          : () {
-              _touch();
-              onTap();
-            },
-      style: FilledButton.styleFrom(
-        backgroundColor: enabled ? AppTokens.primary : AppTokens.surfaceMuted,
-        foregroundColor: enabled ? Colors.white : AppTokens.onSurfaceFaint,
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 10 : 12,
-          vertical: compact ? 10 : 12,
-        ),
-        shape: RoundedRectangleBorder(borderRadius: AppTokens.borderRadiusLg),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: compact ? 18 : 20),
-          const SizedBox(width: AppTokens.sm),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: compact ? 14 : 15,
-              ),
-            ),
           ),
         ],
       ),

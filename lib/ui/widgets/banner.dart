@@ -7,8 +7,14 @@ enum BannerKind { success, error }
 class InfoBanner extends StatelessWidget {
   final String text;
   final BannerKind kind;
+  final bool dense;
 
-  const InfoBanner({super.key, required this.text, required this.kind});
+  const InfoBanner({
+    super.key,
+    required this.text,
+    required this.kind,
+    this.dense = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -34,8 +40,11 @@ class InfoBanner extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: AppTokens.sm),
-      padding: const EdgeInsets.all(AppTokens.md),
+      margin: EdgeInsets.only(bottom: dense ? AppTokens.xs : AppTokens.sm),
+      padding: EdgeInsets.symmetric(
+        horizontal: dense ? 10 : AppTokens.md,
+        vertical: dense ? 8 : AppTokens.md,
+      ),
       decoration: BoxDecoration(
         borderRadius: AppTokens.borderRadiusMd,
         border: Border.all(color: border, width: 1.2),
@@ -43,12 +52,18 @@ class InfoBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(icon, color: border),
+          Icon(icon, color: border, size: dense ? 19 : 24),
           const SizedBox(width: AppTokens.sm),
           Expanded(
             child: Text(
               text,
-              style: TextStyle(color: textColor, fontWeight: FontWeight.w700),
+              maxLines: dense ? 1 : null,
+              overflow: dense ? TextOverflow.ellipsis : null,
+              style: TextStyle(
+                color: textColor,
+                fontWeight: FontWeight.w700,
+                fontSize: dense ? 13 : null,
+              ),
             ),
           ),
         ],
