@@ -1,0 +1,6 @@
+# Copy this file to key.properties and keep the real values private.
+# Environment variables with ZEITERFASSUNG_* names override these values.
+storeFile=/absolute/path/to/zeiterfassung-terminal-release.jks
+storePassword=replace-me
+keyAlias=zeiterfassung-terminal
+keyPassword=replace-me

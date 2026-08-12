@@ -61,7 +61,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyAiwHpv45V6roPTyfq8kio3hbKSkoxBTxk',
-    appId: '1:1033669882029:android:ae0373c609fe0b8dc4d624',
+    appId: '1:1033669882029:android:26b5a794bbad3ec7c4d624',
     messagingSenderId: '1033669882029',
     projectId: 'zeiterfassung-ebafa',
     storageBucket: 'zeiterfassung-ebafa.firebasestorage.app',

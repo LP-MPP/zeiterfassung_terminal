@@ -4,7 +4,7 @@
       "android": {
         "default": {
           "projectId": "zeiterfassung-ebafa",
-          "appId": "1:1033669882029:android:ae0373c609fe0b8dc4d624",
+          "appId": "1:1033669882029:android:26b5a794bbad3ec7c4d624",
           "fileOutput": "android/app/google-services.json"
         }
       },
@@ -44,6 +44,57 @@
             "value": "no-cache"
           }
         ]
+      },
+      {
+        "source": "/updates/update.json",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store, max-age=0"
+          }
+        ]
+      },
+      {
+        "source": "/releases/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          },
+          {
+            "key": "Content-Disposition",
+            "value": "attachment; filename=zeiterfassung-terminal.apk"
+          }
+        ]
+      },
+      {
+        "source": "/terminal.apk",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store, max-age=0"
+          },
+          {
+            "key": "Content-Disposition",
+            "value": "attachment; filename=zeiterfassung-terminal.apk"
+          }
+        ]
+      },
+      {
+        "source": "/app.apk",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store, max-age=0"
+          }
+        ]
+      }
+    ],
+    "redirects": [
+      {
+        "source": "/app.apk",
+        "destination": "/terminal.apk",
+        "type": 302
       }
     ],
     "rewrites": [
