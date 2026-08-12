@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "versionCode": 5,
-  "versionName": "1.2.2",
-  "apkUrl": "https://zeiterfassung-ebafa.web.app/releases/zeiterfassung-terminal-1.2.2-5.apk",
-  "sha256": "f3737380e28eba24b8b966427c9c13a2bc3f8f509c700d2b3e009c18dfaf10b7",
-  "apkSize": 52977591,
+  "versionCode": 6,
+  "versionName": "1.2.3",
+  "apkUrl": "https://zeiterfassung-ebafa.web.app/releases/zeiterfassung-terminal-1.2.3-6.apk",
+  "sha256": "b8eeefd870cbef009159f4df8cca006a656bec098b1f9bff46e9d6946b893e8a",
+  "apkSize": 52977595,
   "mandatory": false,
-  "publishedAt": "2026-08-12T15:45:00+02:00",
-  "releaseNotes": "Weitere Tablet-Optimierungen: PIN-Zurück-Taste ohne Textbeschnitt, lange Mitarbeiternamen auf zwei Zeilen und tastatursichere Dialoge für Tätigkeit und PIN-Änderung."
+  "publishedAt": "2026-08-12T16:05:00+02:00",
+  "releaseNotes": "Korrektur des In-App-Installers für Samsung-Tablets. Bereits geprüfte Updates werden jetzt zuverlässig an den Android-Systeminstaller übergeben."
 }

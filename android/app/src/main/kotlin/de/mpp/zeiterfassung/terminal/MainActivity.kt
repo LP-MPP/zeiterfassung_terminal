@@ -1,5 +1,6 @@
 package de.mpp.zeiterfassung.terminal
 
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -81,10 +82,27 @@ class MainActivity : FlutterActivity() {
                 return
             }
 
-            val apk = File(path).canonicalFile
-            val cacheRoot = cacheDir.canonicalFile
-            if (!apk.exists() || !apk.isFile || !apk.path.startsWith(cacheRoot.path + File.separator)) {
+            val downloadedApk = File(path).canonicalFile
+            if (!downloadedApk.exists() || !downloadedApk.isFile || downloadedApk.length() <= 0L) {
                 result.error("invalid_apk", "Die heruntergeladene APK ist ungültig.", null)
+                return
+            }
+
+            // Dart's systemTemp path differs between some Android/Samsung builds.
+            // Normalize the verified download into our known FileProvider folder
+            // instead of rejecting an otherwise valid app-private cache path.
+            val updateDirectory = File(cacheDir, "updates")
+            if (!updateDirectory.exists() && !updateDirectory.mkdirs()) {
+                result.error("cache_failed", "Update-Ordner konnte nicht erstellt werden.", null)
+                return
+            }
+            val apk = File(updateDirectory, "zeiterfassung-terminal.apk").canonicalFile
+            if (downloadedApk.path != apk.path) {
+                downloadedApk.copyTo(apk, overwrite = true)
+            }
+
+            if (!apk.exists() || !apk.isFile || apk.length() != downloadedApk.length()) {
+                result.error("copy_failed", "Die geprüfte APK konnte nicht vorbereitet werden.", null)
                 return
             }
 
@@ -93,8 +111,9 @@ class MainActivity : FlutterActivity() {
                 "$packageName.fileprovider",
                 apk
             )
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
+            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                data = uri
+                clipData = ClipData.newRawUri("Zeiterfassung Update", uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
