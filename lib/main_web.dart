@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
@@ -11,14 +12,22 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('de_DE', null);
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // 🔴 WICHTIG: Web-Admin → KEIN Offline Cache
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: false,
   );
+
+  // The terminal backend only accepts authenticated callers. Android already
+  // signs the device in anonymously in main.dart; the dedicated web entry
+  // point must do the same before TerminalShell loads the employee list.
+  final auth = FirebaseAuth.instance;
+  if (auth.currentUser == null) {
+    await auth.signInAnonymously();
+  } else {
+    await auth.currentUser!.getIdToken(true);
+  }
 
   runApp(const TimeTerminalApp());
 }

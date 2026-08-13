@@ -195,8 +195,12 @@ class _PunchScreenState extends State<PunchScreen> {
           }
         }
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('Backend employee load error: $e');
+      debugPrintStack(
+        label: 'Backend employee load stack trace',
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       setState(() {
         _empsLoaded = true;
