@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 /// Absence type constants.
 class AbsenceType {
   static const urlaub = 'URLAUB';
@@ -124,10 +122,6 @@ class Absence {
     this.createdAt,
   });
 
-  static Absence fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
-    return Absence.fromMap(doc.id, doc.data() ?? {});
-  }
-
   factory Absence.fromMap(String id, Map<String, dynamic> d) {
     return Absence(
       id: id,
@@ -144,37 +138,24 @@ class Absence {
       createdByEmployee: d['createdByEmployee'] == true,
       adminUid: d['adminUid']?.toString(),
       approvedBy: d['approvedBy']?.toString(),
-      approvedAt: d['approvedAt'] is Timestamp
-          ? (d['approvedAt'] as Timestamp).toDate()
-          : null,
+      approvedAt: _asDateTime(d['approvedAt']),
       rejectionReason: d['rejectionReason']?.toString(),
-      createdAt: d['createdAt'] is Timestamp
-          ? (d['createdAt'] as Timestamp).toDate()
-          : null,
+      createdAt: _asDateTime(d['createdAt']),
     );
   }
-
-  Map<String, dynamic> toMap() => {
-    'employeeId': employeeId,
-    'type': type,
-    'startDate': startDate,
-    'endDate': endDate,
-    'startDayPart': startDayPart,
-    'endDayPart': endDayPart,
-    'status': status,
-    'vacationDaysConsumed': vacationDaysConsumed,
-    'specialLeaveCategory': specialLeaveCategory,
-    'reason': reason,
-    'createdByEmployee': createdByEmployee,
-    'adminUid': adminUid,
-    'approvedBy': approvedBy,
-    if (approvedAt != null) 'approvedAt': Timestamp.fromDate(approvedAt!),
-    'rejectionReason': rejectionReason,
-    'createdAt': FieldValue.serverTimestamp(),
-    'updatedAt': FieldValue.serverTimestamp(),
-  };
 
   /// Whether this absence is active (approved or pending).
   bool get isActive =>
       status == AbsenceStatus.approved || status == AbsenceStatus.pending;
+}
+
+DateTime? _asDateTime(Object? value) {
+  if (value is DateTime) return value;
+  if (value is Map && value['_seconds'] is num) {
+    return DateTime.fromMillisecondsSinceEpoch(
+      (value['_seconds'] as num).toInt() * 1000,
+      isUtc: true,
+    ).toLocal();
+  }
+  return null;
 }

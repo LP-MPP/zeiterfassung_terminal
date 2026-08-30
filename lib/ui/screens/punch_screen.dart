@@ -10,7 +10,7 @@ import '../../core/constants.dart';
 import '../../core/holidays_bw.dart';
 import '../../core/rules.dart';
 import '../../data/absence.dart';
-import '../../data/store.dart';
+import '../../data/employee.dart';
 import '../design_tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/banner.dart';
@@ -161,7 +161,6 @@ class _PunchScreenState extends State<PunchScreen> {
         final employee = Employee(
           id: (rawEmp['id'] ?? '').toString(),
           name: (rawEmp['name'] ?? '').toString(),
-          pinHash: '',
           active: (rawEmp['active'] ?? true) == true,
         );
         if (employee.id.isEmpty || !employee.active) continue;
@@ -379,16 +378,18 @@ class _PunchScreenState extends State<PunchScreen> {
     });
 
     try {
-      if (_pinInput.length != _pinLen)
+      if (_pinInput.length != _pinLen) {
         throw StateError('Bitte $_pinLen-stelligen PIN eingeben.');
+      }
 
       final id = _normId(_selectedEmpId);
       final emp = _activeEmps
           .where((e) => _normId(e.id) == id)
           .cast<Employee?>()
           .firstOrNull;
-      if (emp == null)
+      if (emp == null) {
         throw StateError('Mitarbeiter nicht gefunden oder inaktiv.');
+      }
 
       final result = await _functions
           .httpsCallable('authenticateEmployeePin')
@@ -442,8 +443,9 @@ class _PunchScreenState extends State<PunchScreen> {
         _pinInput = '';
       });
     } finally {
-      if (!mounted) return;
-      setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+      }
     }
   }
 
@@ -583,7 +585,7 @@ class _PunchScreenState extends State<PunchScreen> {
         'eventType': eventType,
         'terminalId': terminalId,
         'requestId': requestId,
-        if (note != null) 'note': note,
+        'note': ?note,
       });
 
       final data = Map<String, dynamic>.from((result.data as Map?) ?? const {});
@@ -622,11 +624,12 @@ class _PunchScreenState extends State<PunchScreen> {
         }
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _savingPunchEventType = null;
-      });
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _savingPunchEventType = null;
+        });
+      }
     }
   }
 
@@ -1720,7 +1723,7 @@ class _PunchScreenState extends State<PunchScreen> {
                           )
                         : ListView.separated(
                             itemCount: thisYear.length,
-                            separatorBuilder: (_, __) =>
+                            separatorBuilder: (_, _) =>
                                 const Divider(height: 1),
                             itemBuilder: (_, i) => _absenceRow(thisYear[i]),
                           ),
@@ -2260,8 +2263,9 @@ class _PunchScreenState extends State<PunchScreen> {
                         if (picked != null) {
                           setD(() {
                             dateRange = picked;
-                            if (picked.start != picked.end)
+                            if (picked.start != picked.end) {
                               dayPart = AbsenceDayPart.full;
+                            }
                           });
                         }
                       },

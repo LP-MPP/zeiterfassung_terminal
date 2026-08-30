@@ -1,5 +1,5 @@
 import 'dart:io';
-import '../lib/core/security.dart';
+import 'package:zeiterfassung_terminal/core/security.dart';
 
 void main(List<String> args) {
   if (args.length != 2) {

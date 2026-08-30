@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 /// Computes all public holidays for Baden-Wuerttemberg in a given year.
 /// Returns a list of dayKey strings (YYYY-MM-DD).
 List<String> getPublicHolidaysBW(int year) {
@@ -39,26 +37,6 @@ Map<String, String> getPublicHolidayNamesBW(int year) {
     _dayKey(DateTime(year, 12, 25)): '1. Weihnachtstag',
     _dayKey(DateTime(year, 12, 26)): '2. Weihnachtstag',
   };
-}
-
-/// Seeds public holidays for the given year into Firestore.
-/// Skips holidays that already exist.
-Future<void> seedPublicHolidaysBW(int year) async {
-  final db = FirebaseFirestore.instance;
-  final col = db.collection('public_holidays');
-  final names = getPublicHolidayNamesBW(year);
-
-  for (final entry in names.entries) {
-    final docRef = col.doc(entry.key);
-    final snap = await docRef.get();
-    if (!snap.exists) {
-      await docRef.set({
-        'date': entry.key,
-        'name': entry.value,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    }
-  }
 }
 
 /// Gauss Easter algorithm — returns Easter Sunday for a given year.
