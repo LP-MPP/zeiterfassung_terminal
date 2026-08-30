@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const admin = require("firebase-admin");
+const {getFirestore} = require("firebase-admin/firestore");
 
 const PROJECT_ID = "zeiterfassung-ebafa";
 const TERMINAL_ID = "TEST-TERMINAL";
@@ -42,7 +42,7 @@ async function main() {
   }
 
   const {createPunchEvent} = require("./index");
-  const db = admin.firestore();
+  const db = getFirestore();
 
   await seedPunchState(db, {
     sessionId: "retry-session",

@@ -80,12 +80,12 @@
     "redirects": [
       {
         "source": "/terminal.apk",
-        "destination": "/releases/zeiterfassung-terminal-1.2.5-8.apk",
+        "destination": "/releases/zeiterfassung-terminal-1.2.6-9.apk",
         "type": 302
       },
       {
         "source": "/app.apk",
-        "destination": "/releases/zeiterfassung-terminal-1.2.5-8.apk",
+        "destination": "/releases/zeiterfassung-terminal-1.2.6-9.apk",
         "type": 302
       }
     ],

@@ -1,5 +1,7 @@
 const crypto = require("crypto");
-const admin = require("firebase-admin");
+const {initializeApp} = require("firebase-admin/app");
+const {getAuth} = require("firebase-admin/auth");
+const {FieldValue, getFirestore} = require("firebase-admin/firestore");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onDocumentWritten} = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
@@ -19,9 +21,9 @@ const {
 } = require("./month_lock");
 const {publicLastEventType} = require("./terminal_presence");
 
-admin.initializeApp();
+initializeApp();
 
-const db = admin.firestore();
+const db = getFirestore();
 const REGION = "europe-west3";
 const SESSION_TTL_MS = 2 * 60 * 1000;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
@@ -129,7 +131,7 @@ async function getLastEventType(employeeId) {
       terminalId: lastTerminalId,
       source: lastSource,
       dayKey: dayKeyBerlinFromUtcMs(lastTimestampUtcMs),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     }, {merge: true});
   }
 
@@ -148,7 +150,7 @@ async function noteFailedLogin(uid, employeeId) {
   await attemptRef.set({
     count: count + 1,
     resetAtMs: now + LOGIN_WINDOW_MS,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   }, {merge: true});
 }
 
@@ -252,7 +254,7 @@ exports.authenticateEmployeePin = onCall({region: REGION}, async (request) => {
     employmentType: String(employee.employmentType || "FESTANSTELLUNG"),
     terminalId,
     expiresAtMs,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
   });
 
   return {
@@ -289,7 +291,7 @@ exports.refreshEmployeeSession = onCall({region: REGION}, async (request) => {
     const refreshedExpiry = Date.now() + SESSION_TTL_MS;
     transaction.update(sessionRef, {
       expiresAtMs: refreshedExpiry,
-      lastActivityAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastActivityAt: FieldValue.serverTimestamp(),
     });
     return refreshedExpiry;
   });
@@ -344,7 +346,7 @@ exports.changeEmployeePin = onCall({region: REGION}, async (request) => {
   const newHash = hashPin(employeeId, newPin);
   await employeeRef.update({
     pinHash: newHash,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   });
 
   return {success: true};
@@ -412,7 +414,7 @@ exports.createEmployeeVacationRequest = onCall({region: REGION}, async (request)
       throw new HttpsError("already-exists", "Für diesen Zeitraum besteht bereits eine Abwesenheit.");
     }
 
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = FieldValue.serverTimestamp();
     transaction.create(absenceRef, {
       employeeId,
       type: "URLAUB",
@@ -545,7 +547,7 @@ exports.submitOnboardingRequest = onCall({region: REGION}, async (request) => {
     transaction.update(requestRef, {
       profileData,
       status: "SUBMITTED",
-      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+      submittedAt: FieldValue.serverTimestamp(),
     });
   });
 
@@ -574,7 +576,7 @@ exports.signTimesheet = onCall({region: REGION}, async (request) => {
       throw new HttpsError("failed-precondition", "Dieser Nachweis wurde bereits unterschrieben.");
     }
 
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = FieldValue.serverTimestamp();
     transaction.update(requestRef, {
       status: "SIGNED",
       signatureDataUrl,
@@ -663,7 +665,7 @@ exports.setDayOverride = onCall({region: REGION}, async (request) => {
     if (approval.exists) {
       throw new HttpsError("failed-precondition", "Der Monat ist freigegeben. Bitte zuerst die Freigabe zurücknehmen.");
     }
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = FieldValue.serverTimestamp();
     transaction.set(overrideRef, {
       employeeId,
       dayKey,
@@ -714,7 +716,7 @@ exports.deleteDayOverride = onCall({region: REGION}, async (request) => {
       throw new HttpsError("failed-precondition", "Der Monat ist freigegeben. Bitte zuerst die Freigabe zurücknehmen.");
     }
     if (!override.exists) return;
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = FieldValue.serverTimestamp();
     transaction.delete(overrideRef);
     transaction.create(auditRef, {
       action: "DAY_OVERRIDE_DELETED",
@@ -770,7 +772,7 @@ exports.createAdminAbsence = onCall({region: REGION}, async (request) => {
       throw new HttpsError("already-exists", "Für diesen Zeitraum besteht bereits eine Abwesenheit.");
     }
 
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = FieldValue.serverTimestamp();
     transaction.create(absenceRef, {
       employeeId,
       type: range.type,
@@ -834,7 +836,7 @@ exports.updateAdminAbsenceStatus = onCall({region: REGION}, async (request) => {
     }
     await assertMonthsOpen(transaction, String(data.employeeId || ""), String(data.startDate || ""), String(data.endDate || ""));
 
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = FieldValue.serverTimestamp();
     const update = {
       status: nextStatus,
       updatedAt: timestamp,
@@ -887,7 +889,7 @@ exports.createAdminUser = onCall({region: REGION}, async (request) => {
 
   let userRecord = null;
   try {
-    userRecord = await admin.auth().createUser({
+    userRecord = await getAuth().createUser({
       email,
       password,
       displayName,
@@ -904,7 +906,7 @@ exports.createAdminUser = onCall({region: REGION}, async (request) => {
       active: true,
       createdBy: request.auth.uid,
       createdByEmail: request.auth.token.email || null,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
     });
     batch.create(auditRef, {
       action: "ADMIN_CREATED",
@@ -914,7 +916,7 @@ exports.createAdminUser = onCall({region: REGION}, async (request) => {
       targetRole: role,
       adminUid: request.auth.uid,
       adminEmail: request.auth.token.email || null,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
     });
     await batch.commit();
 
@@ -929,7 +931,7 @@ exports.createAdminUser = onCall({region: REGION}, async (request) => {
     }
     if (userRecord) {
       try {
-        await admin.auth().deleteUser(userRecord.uid);
+        await getAuth().deleteUser(userRecord.uid);
       } catch (rollbackError) {
         logger.error("Failed to roll back admin Auth user", {
           uid: userRecord.uid,
@@ -994,10 +996,10 @@ exports.updateAdminUser = onCall({region: REGION}, async (request) => {
     if (active === true) authUpdate.disabled = false;
 
     if (Object.keys(authUpdate).length > 0) {
-      await admin.auth().updateUser(targetUid, authUpdate);
+      await getAuth().updateUser(targetUid, authUpdate);
     }
 
-    const fsUpdate = {updatedAt: admin.firestore.FieldValue.serverTimestamp()};
+    const fsUpdate = {updatedAt: FieldValue.serverTimestamp()};
     if (displayName) fsUpdate.displayName = displayName;
     if (active !== null) fsUpdate.active = active;
     if (role) fsUpdate.role = role;
@@ -1011,7 +1013,7 @@ exports.updateAdminUser = onCall({region: REGION}, async (request) => {
       changes: Object.keys(fsUpdate).filter((k) => k !== "updatedAt"),
       adminUid: request.auth.uid,
       adminEmail: request.auth.token.email || null,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
     });
     await batch.commit();
 
@@ -1195,7 +1197,7 @@ async function recalculateVacationBalance(employeeId, year) {
     remaining,
     sickDays: totals.sickDays,
     specialLeaveDays: totals.specialLeaveDays,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   });
 }
 
@@ -1213,7 +1215,7 @@ exports.onAbsenceWritten = onDocumentWritten(
         if (Math.abs(storedDays - canonicalDays) > 0.001) {
           await event.data.after.ref.update({
             vacationDaysConsumed: canonicalDays,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
           });
           return;
         }
@@ -1298,7 +1300,7 @@ exports.onDayOverrideWritten = onDocumentWritten(
         timestampUtcMs: outUtcMs != null ? Number(outUtcMs) : Number(st.timestampUtcMs || Date.now()),
         dayKey,
         source: "ADMIN",
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       }, {merge: true});
     });
 
@@ -1399,7 +1401,7 @@ exports.createPunchEvent = onCall({region: REGION}, async (request) => {
         timestampUtcMs,
         terminalId,
         source: "PIN",
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
         dayKey,
       };
       if (preparedNote.note) eventData.note = preparedNote.note;
@@ -1412,7 +1414,7 @@ exports.createPunchEvent = onCall({region: REGION}, async (request) => {
         terminalId,
         source: "PIN",
         dayKey,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       }, {merge: true});
       transaction.delete(sessionRef);
 

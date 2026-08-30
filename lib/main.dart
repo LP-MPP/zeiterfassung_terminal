@@ -54,7 +54,6 @@ class _TimeTerminalAppState extends State<TimeTerminalApp> {
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
       ],
       builder: (context, child) => AppUpdateCoordinator(
         navigatorKey: _navigatorKey,
