@@ -2,8 +2,13 @@ const crypto = require("crypto");
 const admin = require("firebase-admin");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onDocumentWritten} = require("firebase-functions/v2/firestore");
+const logger = require("firebase-functions/logger");
 const {addAbsenceToBalance} = require("./absence_balance");
 const {preparePunchNote} = require("./punch_note");
+const {
+  normalizePunchRequestId,
+  punchEventDocumentId,
+} = require("./punch_request");
 
 admin.initializeApp();
 
@@ -856,11 +861,13 @@ exports.onDayOverrideWritten = onDocumentWritten(
     });
 
 exports.createPunchEvent = onCall({region: REGION}, async (request) => {
+  const startedAtMs = Date.now();
   ensureSignedIn(request);
 
   const sessionId = String(request.data?.sessionId || "").trim();
   const eventType = normalizeEventType(request.data?.eventType);
   const terminalId = normalizeTerminalId(request.data?.terminalId);
+  const normalizedRequestId = normalizePunchRequestId(request.data?.requestId);
 
   if (!sessionId) {
     throw new HttpsError("invalid-argument", "Session fehlt.");
@@ -871,73 +878,127 @@ exports.createPunchEvent = onCall({region: REGION}, async (request) => {
   if (!terminalId) {
     throw new HttpsError("invalid-argument", "Terminal-ID fehlt.");
   }
+  if (!normalizedRequestId.ok) {
+    throw new HttpsError("invalid-argument", normalizedRequestId.message);
+  }
 
+  const requestId = normalizedRequestId.requestId;
   const sessionRef = db.collection("terminal_sessions").doc(sessionId);
-  const sessionSnap = await sessionRef.get();
-  if (!sessionSnap.exists) {
-    throw new HttpsError("failed-precondition", "Session ist abgelaufen. Bitte erneut anmelden.");
+  const eventRef = requestId ?
+    db.collection("events").doc(punchEventDocumentId(request.auth.uid, requestId)) :
+    db.collection("events").doc();
+
+  try {
+    const result = await db.runTransaction(async (transaction) => {
+      // A repeated request is acknowledged before checking the now-deleted
+      // terminal session. This makes a lost network response safe to retry.
+      const existingEventSnap = await transaction.get(eventRef);
+      if (existingEventSnap.exists) {
+        const existing = existingEventSnap.data() || {};
+        if (String(existing.eventType || "") !== eventType ||
+            String(existing.terminalId || "") !== terminalId) {
+          throw new HttpsError("already-exists", "Vorgangs-ID wurde bereits verwendet.");
+        }
+        return {
+          employeeId: String(existing.employeeId || ""),
+          eventType,
+          timestampUtcMs: Number(existing.timestampUtcMs || 0),
+          replayed: true,
+        };
+      }
+
+      const sessionSnap = await transaction.get(sessionRef);
+      if (!sessionSnap.exists) {
+        throw new HttpsError("failed-precondition", "Session ist abgelaufen. Bitte erneut anmelden.");
+      }
+
+      const session = sessionSnap.data() || {};
+      if (String(session.uid || "") !== request.auth.uid) {
+        throw new HttpsError("permission-denied", "Session gehört zu einem anderen Gerät.");
+      }
+      if (String(session.terminalId || "") !== terminalId) {
+        throw new HttpsError("permission-denied", "Terminal-ID stimmt nicht mit der Session überein.");
+      }
+      if (Number(session.expiresAtMs || 0) <= Date.now()) {
+        throw new HttpsError("failed-precondition", "Session ist abgelaufen. Bitte erneut anmelden.");
+      }
+
+      const employeeId = String(session.employeeId || "");
+      const employeeRef = db.collection("employees").doc(employeeId);
+      const stateRef = db.collection("employee_state").doc(employeeId);
+      const [employeeSnap, stateSnap] = await transaction.getAll(
+          employeeRef,
+          stateRef,
+      );
+
+      if (!employeeSnap.exists || employeeSnap.data()?.active !== true) {
+        throw new HttpsError("failed-precondition", "Mitarbeiter ist nicht mehr aktiv.");
+      }
+
+      const employee = employeeSnap.data() || {};
+      const employmentType = String(employee.employmentType || "FESTANSTELLUNG");
+      const preparedNote = preparePunchNote(request.data?.note, eventType, employmentType);
+      if (!preparedNote.ok) {
+        throw new HttpsError("invalid-argument", preparedNote.message);
+      }
+
+      const lastEventType = stateSnap.exists ?
+        stateSnap.data()?.lastEventType || null :
+        null;
+      if (!isAllowed(lastEventType, eventType)) {
+        throw new HttpsError("failed-precondition", "Aktion ist in diesem Zustand nicht zulässig.");
+      }
+
+      const timestampUtcMs = Date.now();
+      const dayKey = dayKeyBerlinFromUtcMs(timestampUtcMs);
+      const eventData = {
+        employeeId,
+        eventType,
+        timestampUtcMs,
+        terminalId,
+        source: "PIN",
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        dayKey,
+      };
+      if (preparedNote.note) eventData.note = preparedNote.note;
+
+      transaction.create(eventRef, eventData);
+      transaction.set(stateRef, {
+        employeeId,
+        lastEventType: eventType,
+        timestampUtcMs,
+        terminalId,
+        source: "PIN",
+        dayKey,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+      transaction.delete(sessionRef);
+
+      return {employeeId, eventType, timestampUtcMs, replayed: false};
+    });
+
+    logger.info(result.replayed ? "Punch retry acknowledged" : "Punch event stored", {
+      employeeId: result.employeeId,
+      eventType: result.eventType,
+      terminalId,
+      replayed: result.replayed,
+      requestIdPresent: requestId != null,
+      durationMs: Date.now() - startedAtMs,
+    });
+    return result;
+  } catch (error) {
+    const details = {
+      eventType,
+      terminalId,
+      requestIdPresent: requestId != null,
+      durationMs: Date.now() - startedAtMs,
+      code: String(error?.code || "internal"),
+    };
+    if (error instanceof HttpsError) {
+      logger.warn("Punch event rejected", details);
+      throw error;
+    }
+    logger.error("Punch event failed", details);
+    throw new HttpsError("internal", "Buchung konnte nicht gespeichert werden.");
   }
-
-  const session = sessionSnap.data() || {};
-  if (String(session.uid || "") != request.auth.uid) {
-    throw new HttpsError("permission-denied", "Session gehört zu einem anderen Gerät.");
-  }
-  if (String(session.terminalId || "") !== terminalId) {
-    throw new HttpsError("permission-denied", "Terminal-ID stimmt nicht mit der Session überein.");
-  }
-  if (Number(session.expiresAtMs || 0) <= Date.now()) {
-    await sessionRef.delete().catch(() => {});
-    throw new HttpsError("failed-precondition", "Session ist abgelaufen. Bitte erneut anmelden.");
-  }
-
-  const employeeId = String(session.employeeId || "");
-  const employeeSnap = await db.collection("employees").doc(employeeId).get();
-  if (!employeeSnap.exists || employeeSnap.data()?.active !== true) {
-    await sessionRef.delete().catch(() => {});
-    throw new HttpsError("failed-precondition", "Mitarbeiter ist nicht mehr aktiv.");
-  }
-
-  const employee = employeeSnap.data() || {};
-  const employmentType = String(employee.employmentType || "FESTANSTELLUNG");
-  const preparedNote = preparePunchNote(request.data?.note, eventType, employmentType);
-  if (!preparedNote.ok) {
-    throw new HttpsError("invalid-argument", preparedNote.message);
-  }
-
-  const lastEventType = await getLastEventType(employeeId);
-  if (!isAllowed(lastEventType, eventType)) {
-    throw new HttpsError("failed-precondition", "Aktion ist in diesem Zustand nicht zulässig.");
-  }
-
-  const timestampUtcMs = Date.now();
-  const eventRef = db.collection("events").doc();
-  const eventData = {
-    employeeId,
-    eventType,
-    timestampUtcMs,
-    terminalId,
-    source: "PIN",
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    dayKey: dayKeyBerlinFromUtcMs(timestampUtcMs),
-  };
-  if (preparedNote.note) eventData.note = preparedNote.note;
-  await eventRef.set(eventData);
-
-  await db.collection("employee_state").doc(employeeId).set({
-    employeeId,
-    lastEventType: eventType,
-    timestampUtcMs,
-    terminalId,
-    source: "PIN",
-    dayKey: dayKeyBerlinFromUtcMs(timestampUtcMs),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  }, {merge: true});
-
-  await sessionRef.delete().catch(() => {});
-
-  return {
-    employeeId,
-    eventType,
-    timestampUtcMs,
-  };
 });

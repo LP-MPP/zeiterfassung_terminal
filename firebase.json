@@ -68,19 +68,6 @@
         ]
       },
       {
-        "source": "/terminal.apk",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "no-store, max-age=0"
-          },
-          {
-            "key": "Content-Disposition",
-            "value": "attachment; filename=zeiterfassung-terminal.apk"
-          }
-        ]
-      },
-      {
         "source": "/app.apk",
         "headers": [
           {
@@ -92,8 +79,13 @@
     ],
     "redirects": [
       {
+        "source": "/terminal.apk",
+        "destination": "/releases/zeiterfassung-terminal-1.2.5-8.apk",
+        "type": 302
+      },
+      {
         "source": "/app.apk",
-        "destination": "/terminal.apk",
+        "destination": "/releases/zeiterfassung-terminal-1.2.5-8.apk",
         "type": 302
       }
     ],

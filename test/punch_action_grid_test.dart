@@ -26,6 +26,7 @@ void main() {
                 canBreakStart: true,
                 canBreakEnd: false,
                 busy: false,
+                pendingEventType: null,
                 compact: true,
                 onPunchIn: () {},
                 onPunchOut: () {},
@@ -54,4 +55,41 @@ void main() {
     }
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'shows immediate progress and blocks another punch while saving',
+    (tester) async {
+      var breakEndTaps = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: SizedBox(
+              width: 950,
+              height: 180,
+              child: PunchActionGrid(
+                canPunchIn: false,
+                canPunchOut: false,
+                canBreakStart: false,
+                canBreakEnd: true,
+                busy: true,
+                pendingEventType: 'BREAK_END',
+                compact: true,
+                onPunchIn: () {},
+                onPunchOut: () {},
+                onBreakStart: () {},
+                onBreakEnd: () => breakEndTaps++,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Wird gespeichert …'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await tester.tap(find.text('Wird gespeichert …'));
+      expect(breakEndTaps, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

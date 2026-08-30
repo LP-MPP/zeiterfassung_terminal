@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/absence_helpers.dart';
 import '../../core/constants.dart';
@@ -30,6 +31,7 @@ class PunchScreen extends StatefulWidget {
 }
 
 class _PunchScreenState extends State<PunchScreen> {
+  static const _uuid = Uuid();
   final _functions = FirebaseFunctions.instanceFor(region: 'europe-west3');
 
   List<Employee> _activeEmps = const [];
@@ -39,6 +41,9 @@ class _PunchScreenState extends State<PunchScreen> {
 
   bool _loggedIn = false;
   bool _busy = false;
+  String? _savingPunchEventType;
+  String? _retryPunchEventType;
+  String? _retryPunchRequestId;
 
   String? _employeeId;
   String? _employeeName;
@@ -270,6 +275,9 @@ class _PunchScreenState extends State<PunchScreen> {
     setState(() {
       _loggedIn = false;
       _busy = false;
+      _savingPunchEventType = null;
+      _retryPunchEventType = null;
+      _retryPunchRequestId = null;
 
       _employeeId = null;
       _employeeName = null;
@@ -498,6 +506,7 @@ class _PunchScreenState extends State<PunchScreen> {
   }
 
   Future<void> _handlePunch(String eventType) async {
+    if (_busy) return;
     if (eventType == 'OUT' && _employmentType == 'MINIJOB') {
       final note = await _askForActivityNote();
       if (note == null || !mounted) return;
@@ -508,10 +517,18 @@ class _PunchScreenState extends State<PunchScreen> {
   }
 
   Future<void> _punch(String eventType, {String? note}) async {
-    if (_employeeId == null || _sessionId == null) return;
+    if (_busy || _employeeId == null || _sessionId == null) return;
+
+    final requestId =
+        _retryPunchEventType == eventType && _retryPunchRequestId != null
+        ? _retryPunchRequestId!
+        : _uuid.v4();
+    _retryPunchEventType = eventType;
+    _retryPunchRequestId = requestId;
 
     setState(() {
       _busy = true;
+      _savingPunchEventType = eventType;
       _error = null;
       _success = null;
       _successUntil = null;
@@ -522,6 +539,7 @@ class _PunchScreenState extends State<PunchScreen> {
         'sessionId': _sessionId,
         'eventType': eventType,
         'terminalId': terminalId,
+        'requestId': requestId,
         if (note != null) 'note': note,
       });
 
@@ -542,6 +560,8 @@ class _PunchScreenState extends State<PunchScreen> {
       setState(() {
         _success = '${eventLabel(eventType)} · $t';
         _successUntil = DateTime.now().add(const Duration(seconds: 4));
+        _retryPunchEventType = null;
+        _retryPunchRequestId = null;
       });
 
       _logout(keepBanner: true);
@@ -559,7 +579,10 @@ class _PunchScreenState extends State<PunchScreen> {
       });
     } finally {
       if (!mounted) return;
-      setState(() => _busy = false);
+      setState(() {
+        _busy = false;
+        _savingPunchEventType = null;
+      });
     }
   }
 
@@ -1350,6 +1373,7 @@ class _PunchScreenState extends State<PunchScreen> {
               canBreakStart: canBreakStart,
               canBreakEnd: canBreakEnd,
               busy: _busy,
+              pendingEventType: _savingPunchEventType,
               compact: dense,
               onPunchIn: () {
                 _touch();

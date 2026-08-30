@@ -9,6 +9,7 @@ class PunchActionGrid extends StatelessWidget {
     required this.canBreakStart,
     required this.canBreakEnd,
     required this.busy,
+    required this.pendingEventType,
     required this.compact,
     required this.onPunchIn,
     required this.onPunchOut,
@@ -22,6 +23,7 @@ class PunchActionGrid extends StatelessWidget {
   final bool canBreakStart;
   final bool canBreakEnd;
   final bool busy;
+  final String? pendingEventType;
   final bool compact;
   final VoidCallback onPunchIn;
   final VoidCallback onPunchOut;
@@ -55,6 +57,7 @@ class PunchActionGrid extends StatelessWidget {
                           icon: Icons.login,
                           enabled: canPunchIn,
                           busy: busy,
+                          showProgress: pendingEventType == 'IN',
                           compact: compact,
                           onTap: onPunchIn,
                         ),
@@ -66,6 +69,7 @@ class PunchActionGrid extends StatelessWidget {
                           icon: Icons.logout,
                           enabled: canPunchOut,
                           busy: busy,
+                          showProgress: pendingEventType == 'OUT',
                           compact: compact,
                           onTap: onPunchOut,
                         ),
@@ -84,6 +88,7 @@ class PunchActionGrid extends StatelessWidget {
                           icon: Icons.pause,
                           enabled: canBreakStart,
                           busy: busy,
+                          showProgress: pendingEventType == 'BREAK_START',
                           compact: compact,
                           onTap: onBreakStart,
                         ),
@@ -95,6 +100,7 @@ class PunchActionGrid extends StatelessWidget {
                           icon: Icons.play_arrow,
                           enabled: canBreakEnd,
                           busy: busy,
+                          showProgress: pendingEventType == 'BREAK_END',
                           compact: compact,
                           onTap: onBreakEnd,
                         ),
@@ -117,6 +123,7 @@ class _ActionButton extends StatelessWidget {
     required this.icon,
     required this.enabled,
     required this.busy,
+    required this.showProgress,
     required this.compact,
     required this.onTap,
   });
@@ -125,6 +132,7 @@ class _ActionButton extends StatelessWidget {
   final IconData icon;
   final bool enabled;
   final bool busy;
+  final bool showProgress;
   final bool compact;
   final VoidCallback onTap;
 
@@ -145,13 +153,22 @@ class _ActionButton extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: compact ? 20 : 22),
+            if (busy && showProgress)
+              SizedBox.square(
+                dimension: compact ? 18 : 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: AppTokens.onSurfaceMuted,
+                ),
+              )
+            else
+              Icon(icon, size: compact ? 20 : 22),
             SizedBox(width: compact ? 7 : AppTokens.sm),
             Flexible(
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
-                  label,
+                  busy && showProgress ? 'Wird gespeichert …' : label,
                   maxLines: 1,
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
