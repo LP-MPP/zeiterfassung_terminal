@@ -26,56 +26,56 @@ class StatusPill extends StatelessWidget {
     required this.bg,
     required this.border,
     this.icon,
-    this.fontSize = 11,
+    this.fontSize = 12,
   });
 
   factory StatusPill.success(String text, {IconData? icon}) => StatusPill(
-        text: text,
-        fg: AppTokens.successFg,
-        bg: AppTokens.successBg,
-        border: AppTokens.successBorder,
-        icon: icon,
-      );
+    text: text,
+    fg: AppTokens.successFg,
+    bg: AppTokens.successBg,
+    border: AppTokens.successBorder,
+    icon: icon,
+  );
 
   factory StatusPill.error(String text, {IconData? icon}) => StatusPill(
-        text: text,
-        fg: AppTokens.errorFg,
-        bg: AppTokens.errorBg,
-        border: AppTokens.errorBorder,
-        icon: icon,
-      );
+    text: text,
+    fg: AppTokens.errorFg,
+    bg: AppTokens.errorBg,
+    border: AppTokens.errorBorder,
+    icon: icon,
+  );
 
   factory StatusPill.warning(String text, {IconData? icon}) => StatusPill(
-        text: text,
-        fg: AppTokens.warningFg,
-        bg: AppTokens.warningBg,
-        border: AppTokens.warningBorder,
-        icon: icon,
-      );
+    text: text,
+    fg: AppTokens.warningFg,
+    bg: AppTokens.warningBg,
+    border: AppTokens.warningBorder,
+    icon: icon,
+  );
 
   factory StatusPill.info(String text, {IconData? icon}) => StatusPill(
-        text: text,
-        fg: AppTokens.infoFg,
-        bg: AppTokens.infoBg,
-        border: AppTokens.infoBorder,
-        icon: icon,
-      );
+    text: text,
+    fg: AppTokens.infoFg,
+    bg: AppTokens.infoBg,
+    border: AppTokens.infoBorder,
+    icon: icon,
+  );
 
   factory StatusPill.neutral(String text, {IconData? icon}) => StatusPill(
-        text: text,
-        fg: AppTokens.neutralFg,
-        bg: AppTokens.neutralBg,
-        border: AppTokens.neutralBorder,
-        icon: icon,
-      );
+    text: text,
+    fg: AppTokens.neutralFg,
+    bg: AppTokens.neutralBg,
+    border: AppTokens.neutralBorder,
+    icon: icon,
+  );
 
   factory StatusPill.pending(String text, {IconData? icon}) => StatusPill(
-        text: text,
-        fg: AppTokens.pendingFg,
-        bg: AppTokens.pendingBg,
-        border: AppTokens.pendingBorder,
-        icon: icon,
-      );
+    text: text,
+    fg: AppTokens.pendingFg,
+    bg: AppTokens.pendingBg,
+    border: AppTokens.pendingBorder,
+    icon: icon,
+  );
 
   @override
   Widget build(BuildContext context) {

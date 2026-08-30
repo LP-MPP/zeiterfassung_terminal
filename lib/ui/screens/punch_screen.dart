@@ -790,7 +790,12 @@ class _PunchScreenState extends State<PunchScreen> {
     final canBreakEnd = isAllowed(state, 'BREAK_END');
 
     return MediaQuery(
-      data: mq.copyWith(textScaler: const TextScaler.linear(1.0)),
+      data: mq.copyWith(
+        textScaler: mq.textScaler.clamp(
+          minScaleFactor: 1.0,
+          maxScaleFactor: 1.15,
+        ),
+      ),
       child: Scaffold(
         appBar: (_idle || hideAppBarForSpace)
             ? null
@@ -1344,12 +1349,13 @@ class _PunchScreenState extends State<PunchScreen> {
                           Flexible(
                             child: Text(
                               '${_employeeName ?? ''} (${_employeeId ?? ''})',
-                              maxLines: 1,
+                              maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 16,
+                                fontSize: 17,
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: -0.2,
+                                height: 1.05,
                               ),
                             ),
                           ),
@@ -1445,7 +1451,7 @@ class _PunchScreenState extends State<PunchScreen> {
             children: [
               Expanded(
                 child: SizedBox(
-                  height: dense ? 38 : 44,
+                  height: 48,
                   child: OutlinedButton.icon(
                     style: _compactOutlinedActionStyle(dense),
                     onPressed: _busy ? null : _showAbsenceOverview,
@@ -1454,7 +1460,7 @@ class _PunchScreenState extends State<PunchScreen> {
                       'Urlaub Übersicht',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: dense ? 12 : 13,
+                        fontSize: dense ? 13 : 14,
                       ),
                     ),
                   ),
@@ -1463,7 +1469,7 @@ class _PunchScreenState extends State<PunchScreen> {
               const SizedBox(width: AppTokens.sm),
               Expanded(
                 child: SizedBox(
-                  height: dense ? 38 : 44,
+                  height: 48,
                   child: OutlinedButton.icon(
                     style: _compactOutlinedActionStyle(dense),
                     onPressed: _busy ? null : _showVacationRequest,
@@ -1472,7 +1478,7 @@ class _PunchScreenState extends State<PunchScreen> {
                       'Urlaub beantragen',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: dense ? 12 : 13,
+                        fontSize: dense ? 13 : 14,
                       ),
                     ),
                   ),
@@ -1480,7 +1486,7 @@ class _PunchScreenState extends State<PunchScreen> {
               ),
               const SizedBox(width: AppTokens.sm),
               SizedBox(
-                height: dense ? 38 : 44,
+                height: 48,
                 child: OutlinedButton.icon(
                   style: _compactOutlinedActionStyle(dense),
                   onPressed: _busy ? null : _showChangePinDialog,
@@ -1489,7 +1495,7 @@ class _PunchScreenState extends State<PunchScreen> {
                     'PIN',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      fontSize: dense ? 12 : 13,
+                      fontSize: dense ? 13 : 14,
                     ),
                   ),
                 ),
@@ -1499,16 +1505,13 @@ class _PunchScreenState extends State<PunchScreen> {
           SizedBox(height: dense ? 6 : AppTokens.md),
           SizedBox(
             width: double.infinity,
-            height: dense ? 38 : 44,
+            height: 48,
             child: FilledButton.icon(
               onPressed: _busy ? null : _logout,
               icon: const Icon(Icons.exit_to_app, size: 18),
               label: Text(
                 'Abmelden',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: dense ? 13 : 14,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
               ),
               style: FilledButton.styleFrom(
                 backgroundColor: AppTokens.onSurface.withValues(alpha: 0.08),
@@ -1516,9 +1519,9 @@ class _PunchScreenState extends State<PunchScreen> {
                 padding: EdgeInsets.symmetric(
                   horizontal: dense ? 12 : AppTokens.lg,
                 ),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
+                minimumSize: const Size(0, 48),
+                tapTargetSize: MaterialTapTargetSize.padded,
+                visualDensity: VisualDensity.standard,
               ),
             ),
           ),
@@ -1531,9 +1534,9 @@ class _PunchScreenState extends State<PunchScreen> {
     if (!dense) return const ButtonStyle();
     return OutlinedButton.styleFrom(
       padding: const EdgeInsets.symmetric(horizontal: 10),
-      minimumSize: Size.zero,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      visualDensity: VisualDensity.compact,
+      minimumSize: const Size(0, 48),
+      tapTargetSize: MaterialTapTargetSize.padded,
+      visualDensity: VisualDensity.standard,
     );
   }
 
@@ -1994,7 +1997,7 @@ class _PunchScreenState extends State<PunchScreen> {
                 Text(
                   dateRange,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: AppTokens.onSurfaceMuted,
                   ),

@@ -33,7 +33,7 @@ class PunchActionGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final spacing = compact ? 8.0 : 10.0;
-    final maximumGridHeight = compact ? 180.0 : 240.0;
+    final maximumGridHeight = compact ? 210.0 : 260.0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -146,7 +146,7 @@ class _ActionButton extends StatelessWidget {
           foregroundColor: enabled ? Colors.white : AppTokens.onSurfaceFaint,
           padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
           minimumSize: Size.zero,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          tapTargetSize: MaterialTapTargetSize.padded,
           visualDensity: VisualDensity.standard,
           shape: RoundedRectangleBorder(borderRadius: AppTokens.borderRadiusLg),
         ),

@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../ui/design_tokens.dart';
 import 'app_update.dart';
 import 'app_update_service.dart';
+import 'update_platform.dart';
 
 class AppUpdateCoordinator extends StatefulWidget {
   const AppUpdateCoordinator({
@@ -22,7 +24,7 @@ class AppUpdateCoordinator extends StatefulWidget {
 
 class _AppUpdateCoordinatorState extends State<AppUpdateCoordinator>
     with WidgetsBindingObserver {
-  final AppUpdateService _service = AppUpdateService();
+  AppUpdateService? _service;
   Timer? _timer;
   AppUpdate? _available;
   DateTime? _lastCheck;
@@ -33,6 +35,10 @@ class _AppUpdateCoordinatorState extends State<AppUpdateCoordinator>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (!supportsInAppUpdates(isWeb: kIsWeb, platform: defaultTargetPlatform)) {
+      return;
+    }
+    _service = AppUpdateService();
     _timer = Timer.periodic(const Duration(hours: 6), (_) => _check());
     Future<void>.delayed(const Duration(seconds: 3), _check);
   }
@@ -41,7 +47,7 @@ class _AppUpdateCoordinatorState extends State<AppUpdateCoordinator>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
-    _service.close();
+    _service?.close();
     super.dispose();
   }
 
@@ -56,11 +62,13 @@ class _AppUpdateCoordinatorState extends State<AppUpdateCoordinator>
   }
 
   Future<void> _check() async {
+    final service = _service;
+    if (service == null) return;
     if (_checking) return;
     _checking = true;
     _lastCheck = DateTime.now();
     try {
-      final update = await _service.checkForUpdate();
+      final update = await service.checkForUpdate();
       if (!mounted) return;
       setState(() {
         _available = update;
@@ -75,13 +83,14 @@ class _AppUpdateCoordinatorState extends State<AppUpdateCoordinator>
 
   Future<void> _showUpdateDialog() async {
     final update = _available;
+    final service = _service;
     final context = widget.navigatorKey.currentContext;
-    if (update == null || context == null) return;
+    if (update == null || service == null || context == null) return;
 
     await showDialog<void>(
       context: context,
       barrierDismissible: !update.mandatory,
-      builder: (_) => _UpdateDialog(service: _service, update: update),
+      builder: (_) => _UpdateDialog(service: service, update: update),
     );
   }
 

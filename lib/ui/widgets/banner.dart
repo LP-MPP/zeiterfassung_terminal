@@ -57,7 +57,7 @@ class InfoBanner extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              maxLines: dense ? 1 : null,
+              maxLines: dense ? 2 : null,
               overflow: dense ? TextOverflow.ellipsis : null,
               style: TextStyle(
                 color: textColor,
