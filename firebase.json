@@ -75,18 +75,15 @@
             "value": "no-store, max-age=0"
           }
         ]
-      }
-    ],
-    "redirects": [
-      {
-        "source": "/terminal.apk",
-        "destination": "/releases/zeiterfassung-terminal-1.2.6-9.apk",
-        "type": 302
       },
       {
-        "source": "/app.apk",
-        "destination": "/releases/zeiterfassung-terminal-1.2.6-9.apk",
-        "type": 302
+        "source": "/terminal.apk",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store, max-age=0"
+          }
+        ]
       }
     ],
     "rewrites": [
