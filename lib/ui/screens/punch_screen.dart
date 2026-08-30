@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -37,7 +36,8 @@ class _PunchScreenState extends State<PunchScreen> {
   List<Employee> _activeEmps = const [];
   bool _empsLoaded = false;
   Map<String, String> _presenceMap = const {}; // employeeId → lastEventType
-  StreamSubscription? _presenceSub;
+  Timer? _employeeRefreshTimer;
+  bool _loadingEmployeeList = false;
 
   bool _loggedIn = false;
   bool _busy = false;
@@ -73,7 +73,9 @@ class _PunchScreenState extends State<PunchScreen> {
 
   Timer? _autoLogoutTimer;
   DateTime? _autoLogoutAtUtc;
-  static const Duration _autoLogoutAfter = Duration(minutes: 2);
+  DateTime? _lastSessionRefreshAtUtc;
+  bool _sessionRefreshInFlight = false;
+  static const Duration _sessionRefreshInterval = Duration(seconds: 20);
 
   // Idle "Always-On" screen
   bool _idle = false;
@@ -113,7 +115,10 @@ class _PunchScreenState extends State<PunchScreen> {
   void initState() {
     super.initState();
     _loadActiveEmployees();
-    _startPresenceListener();
+    _employeeRefreshTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _loadActiveEmployees(),
+    );
 
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -128,34 +133,17 @@ class _PunchScreenState extends State<PunchScreen> {
     });
   }
 
-  void _startPresenceListener() {
-    _presenceSub = FirebaseFirestore.instance
-        .collection('employee_state')
-        .snapshots()
-        .listen((snap) {
-          if (!mounted) return;
-          final map = <String, String>{};
-          for (final doc in snap.docs) {
-            final d = doc.data();
-            final empId = (d['employeeId'] ?? doc.id).toString();
-            final lastEvent = (d['lastEventType'] ?? '').toString();
-            if (empId.isNotEmpty && lastEvent.isNotEmpty) {
-              map[empId] = lastEvent;
-            }
-          }
-          setState(() => _presenceMap = map);
-        });
-  }
-
   @override
   void dispose() {
     _ticker?.cancel();
     _autoLogoutTimer?.cancel();
-    _presenceSub?.cancel();
+    _employeeRefreshTimer?.cancel();
     super.dispose();
   }
 
   Future<void> _loadActiveEmployees() async {
+    if (_loadingEmployeeList) return;
+    _loadingEmployeeList = true;
     try {
       final result = await _functions
           .httpsCallable('listActiveEmployeesPublic')
@@ -167,24 +155,25 @@ class _PunchScreenState extends State<PunchScreen> {
                 ? ((result.data as Map)['employees'] as List? ?? const [])
                 : const []);
 
-      final emps =
-          raw
-              .whereType<Map>()
-              .map(
-                (rawEmp) => Employee(
-                  id: (rawEmp['id'] ?? '').toString(),
-                  name: (rawEmp['name'] ?? '').toString(),
-                  pinHash: '',
-                  active: (rawEmp['active'] ?? true) == true,
-                ),
-              )
-              .where((e) => e.id.isNotEmpty && e.active)
-              .toList()
-            ..sort((a, b) => a.id.compareTo(b.id));
+      final emps = <Employee>[];
+      final presence = <String, String>{};
+      for (final rawEmp in raw.whereType<Map>()) {
+        final employee = Employee(
+          id: (rawEmp['id'] ?? '').toString(),
+          name: (rawEmp['name'] ?? '').toString(),
+          pinHash: '',
+          active: (rawEmp['active'] ?? true) == true,
+        );
+        if (employee.id.isEmpty || !employee.active) continue;
+        emps.add(employee);
+        presence[employee.id] = (rawEmp['lastEventType'] ?? 'OUT').toString();
+      }
+      emps.sort((a, b) => a.id.compareTo(b.id));
 
       if (!mounted) return;
       setState(() {
         _activeEmps = emps;
+        _presenceMap = presence;
         _empsLoaded = true;
 
         if (!_loggedIn && _loginStep == _LoginStep.enterPin) {
@@ -207,11 +196,15 @@ class _PunchScreenState extends State<PunchScreen> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      setState(() {
-        _empsLoaded = true;
-        _error =
-            'Mitarbeiter konnten nicht geladen werden. ${_mapBackendError(e)}';
-      });
+      if (!_empsLoaded || _activeEmps.isEmpty) {
+        setState(() {
+          _empsLoaded = true;
+          _error =
+              'Mitarbeiter konnten nicht geladen werden. ${_mapBackendError(e)}';
+        });
+      }
+    } finally {
+      _loadingEmployeeList = false;
     }
   }
 
@@ -241,13 +234,20 @@ class _PunchScreenState extends State<PunchScreen> {
     if (shouldIdle != _idle) _idle = shouldIdle;
   }
 
-  void _startAutoLogoutTimer() {
+  void _startAutoLogoutTimer(int expiresAtMs) {
     _autoLogoutTimer?.cancel();
-    _autoLogoutAtUtc = DateTime.now().toUtc().add(_autoLogoutAfter);
-    _autoLogoutTimer = Timer(_autoLogoutAfter, () {
-      if (!mounted) return;
-      _logout();
-    });
+    _autoLogoutAtUtc = DateTime.fromMillisecondsSinceEpoch(
+      expiresAtMs,
+      isUtc: true,
+    );
+    final remaining = _autoLogoutAtUtc!.difference(DateTime.now().toUtc());
+    _autoLogoutTimer = Timer(
+      remaining.isNegative ? Duration.zero : remaining,
+      () {
+        if (!mounted) return;
+        _logout();
+      },
+    );
   }
 
   void _stopAutoLogoutTimer() {
@@ -258,7 +258,46 @@ class _PunchScreenState extends State<PunchScreen> {
 
   void _touch() {
     _markInteraction();
-    if (_loggedIn) _startAutoLogoutTimer();
+    if (_loggedIn) unawaited(_refreshSessionIfNeeded());
+  }
+
+  Future<void> _refreshSessionIfNeeded() async {
+    final sessionId = _sessionId;
+    if (!_loggedIn || sessionId == null || _sessionRefreshInFlight) return;
+    final now = DateTime.now().toUtc();
+    final lastRefresh = _lastSessionRefreshAtUtc;
+    if (lastRefresh != null &&
+        now.difference(lastRefresh) < _sessionRefreshInterval) {
+      return;
+    }
+
+    _lastSessionRefreshAtUtc = now;
+    _sessionRefreshInFlight = true;
+    try {
+      final result = await _functions
+          .httpsCallable('refreshEmployeeSession')
+          .call({'sessionId': sessionId, 'terminalId': terminalId});
+      final data = Map<String, dynamic>.from((result.data as Map?) ?? const {});
+      final expiresAtMs = (data['expiresAtMs'] as num?)?.toInt();
+      if (expiresAtMs != null &&
+          mounted &&
+          _loggedIn &&
+          _sessionId == sessionId) {
+        _startAutoLogoutTimer(expiresAtMs);
+      }
+    } catch (error) {
+      if (!mounted || _sessionId != sessionId) return;
+      if (error is FirebaseFunctionsException &&
+          (error.code == 'failed-precondition' ||
+              error.code == 'permission-denied')) {
+        _logout();
+        setState(() {
+          _error = 'Sitzung abgelaufen. Bitte erneut anmelden.';
+        });
+      }
+    } finally {
+      _sessionRefreshInFlight = false;
+    }
   }
 
   int _secondsToLogout() {
@@ -272,6 +311,8 @@ class _PunchScreenState extends State<PunchScreen> {
 
   void _logout({bool keepBanner = false}) {
     _stopAutoLogoutTimer();
+    _lastSessionRefreshAtUtc = null;
+    _sessionRefreshInFlight = false;
     setState(() {
       _loggedIn = false;
       _busy = false;
@@ -360,7 +401,8 @@ class _PunchScreenState extends State<PunchScreen> {
       final data = Map<String, dynamic>.from((result.data as Map?) ?? const {});
       final sessionId = data['sessionId']?.toString();
       final lastEventType = data['lastEventType']?.toString();
-      if (sessionId == null || sessionId.isEmpty) {
+      final expiresAtMs = (data['expiresAtMs'] as num?)?.toInt();
+      if (sessionId == null || sessionId.isEmpty || expiresAtMs == null) {
         throw StateError('Login konnte nicht bestätigt werden.');
       }
 
@@ -383,7 +425,8 @@ class _PunchScreenState extends State<PunchScreen> {
         _lastInteractionLocal = DateTime.now();
       });
 
-      _startAutoLogoutTimer();
+      _lastSessionRefreshAtUtc = DateTime.now().toUtc();
+      _startAutoLogoutTimer(expiresAtMs);
       _loadVacationInfo();
     } catch (e) {
       if (!mounted) return;
@@ -565,6 +608,7 @@ class _PunchScreenState extends State<PunchScreen> {
       });
 
       _logout(keepBanner: true);
+      unawaited(_loadActiveEmployees());
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -763,9 +807,9 @@ class _PunchScreenState extends State<PunchScreen> {
             ),
           ),
           child: SafeArea(
-            child: GestureDetector(
+            child: Listener(
               behavior: HitTestBehavior.translucent,
-              onTap: _touch,
+              onPointerDown: (_) => _touch(),
               child: Stack(
                 children: [
                   Center(

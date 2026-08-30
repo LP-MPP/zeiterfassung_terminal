@@ -17,6 +17,7 @@ const {
   isAbsenceTransitionAllowed,
   monthKeysForRange,
 } = require("./month_lock");
+const {publicLastEventType} = require("./terminal_presence");
 
 admin.initializeApp();
 
@@ -175,19 +176,28 @@ exports.listActiveEmployeesPublic = onCall({region: REGION}, async (request) => 
   ensureSignedIn(request);
 
   const snap = await db.collection("employees").where("active", "==", true).get();
-  const employees = snap.docs
+  const employeeDocs = snap.docs
       // Führungskräfte stempeln nicht → nicht am Terminal anzeigen.
-      .filter((doc) => (doc.data() || {}).employmentType !== "FUEHRUNGSKRAFT")
+      .filter((doc) => (doc.data() || {}).employmentType !== "FUEHRUNGSKRAFT");
+  const stateSnapshots = employeeDocs.length > 0 ?
+    await db.getAll(...employeeDocs.map((doc) => db.collection("employee_state").doc(String(doc.data()?.id || doc.id)))) : [];
+  const stateByEmployee = new Map(stateSnapshots.map((state) => [state.id, state.data() || {}]));
+  const todayKey = dayKeyBerlinFromUtcMs(Date.now());
+  const employees = employeeDocs
       .map((doc) => {
         const data = doc.data() || {};
+        const employeeId = String(data.id || doc.id);
+        const state = stateByEmployee.get(employeeId) || {};
         return {
-          id: String(data.id || doc.id),
+          id: employeeId,
           name: String(data.name || ""),
           active: data.active === true,
+          // Do not expose timestamps or terminal metadata on the public kiosk.
+          lastEventType: publicLastEventType(state, todayKey),
         };
       }).sort((a, b) => a.id.localeCompare(b.id, "de"));
 
-  return employees;
+  return {employees, serverTimeUtcMs: Date.now()};
 });
 
 exports.authenticateEmployeePin = onCall({region: REGION}, async (request) => {
@@ -253,6 +263,38 @@ exports.authenticateEmployeePin = onCall({region: REGION}, async (request) => {
     lastEventType,
     expiresAtMs,
   };
+});
+
+exports.refreshEmployeeSession = onCall({region: REGION}, async (request) => {
+  ensureSignedIn(request);
+  const sessionId = String(request.data?.sessionId || "").trim();
+  const terminalId = normalizeTerminalId(request.data?.terminalId);
+  if (!sessionId || !terminalId) {
+    throw new HttpsError("invalid-argument", "Terminal-Session fehlt.");
+  }
+
+  const sessionRef = db.collection("terminal_sessions").doc(sessionId);
+  const expiresAtMs = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(sessionRef);
+    if (!snapshot.exists) {
+      throw new HttpsError("failed-precondition", "Session ist abgelaufen. Bitte erneut anmelden.");
+    }
+    const data = snapshot.data() || {};
+    if (String(data.uid || "") !== request.auth.uid || String(data.terminalId || "") !== terminalId) {
+      throw new HttpsError("permission-denied", "Terminal-Session ist ungültig.");
+    }
+    if (Number(data.expiresAtMs || 0) <= Date.now()) {
+      throw new HttpsError("failed-precondition", "Session ist abgelaufen. Bitte erneut anmelden.");
+    }
+    const refreshedExpiry = Date.now() + SESSION_TTL_MS;
+    transaction.update(sessionRef, {
+      expiresAtMs: refreshedExpiry,
+      lastActivityAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return refreshedExpiry;
+  });
+
+  return {success: true, expiresAtMs};
 });
 
 exports.changeEmployeePin = onCall({region: REGION}, async (request) => {
