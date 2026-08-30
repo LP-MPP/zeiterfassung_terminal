@@ -11,36 +11,30 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
     }
 
-    function isValidAbsenceType(data) {
-      return data.type in ['URLAUB', 'KRANKHEIT', 'SONDERURLAUB'];
+    function adminRole() {
+      return get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.get('role', 'admin');
     }
 
-    function isValidSpecialLeave(data) {
-      return data.type != 'SONDERURLAUB'
-        || (data.createdByEmployee == false
-          && data.status in ['APPROVED', 'CANCELLED']
-          && data.specialLeaveCategory in [
-            'HOCHZEIT',
-            'TRAUERFALL',
-            'GEBURT',
-            'UMZUG',
-            'SONSTIGES'
-          ]);
+    function canWriteAdminData() {
+      return isAdminUser() && adminRole() in ['superadmin', 'admin'];
     }
 
     // Terminal app
     match /employees/{employeeId} {
-      allow read, create, update: if isAdminUser();
+      allow read: if isAdminUser();
+      allow create, update: if canWriteAdminData();
       allow delete: if false;
     }
 
     match /events/{eventId} {
-      allow read, create: if isAdminUser();
+      allow read: if isAdminUser();
+      allow create: if canWriteAdminData();
       allow update, delete: if false;
     }
 
     match /employee_state/{employeeId} {
-      allow read, write: if isAdminUser();
+      allow read: if isAdminUser();
+      allow write: if canWriteAdminData();
     }
 
     match /terminal_sessions/{sessionId} {
@@ -53,59 +47,51 @@ service cloud.firestore {
 
     match /config/terminal {
       allow read: if isSignedIn();
-      allow create, update: if isAdminUser();
+      allow create, update: if canWriteAdminData();
       allow delete: if false;
     }
 
     // Admin app data
     match /day_overrides/{overrideId} {
-      allow read, write: if isAdminUser();
+      allow read: if isAdminUser();
+      allow write: if false; // Only through month-locking Cloud Functions.
     }
 
     match /audit/{auditId} {
       allow read: if isAdminUser();
-      // Append-only (GoBD): no updates or deletes, ever.
-      // Public create only for the employee signature confirmation.
-      allow create: if isAdminUser()
-        || request.resource.data.action == 'TIMESHEET_SIGNED_BY_EMPLOYEE';
+      // Append-only (GoBD): public entries are written by trusted Functions.
+      allow create: if canWriteAdminData();
       allow update, delete: if false;
     }
 
     match /month_approvals/{approvalId} {
-      allow read, write: if isAdminUser();
+      allow read: if isAdminUser();
+      allow write: if canWriteAdminData();
     }
 
     // Absence management
     match /absences/{absenceId} {
       allow read: if isAdminUser();
-      // Employee requests are created by a session-bound Cloud Function.
-      // Paid special leave can only be granted directly by an active admin.
-      allow create: if isAdminUser()
-        && isValidAbsenceType(request.resource.data)
-        && isValidSpecialLeave(request.resource.data)
-        && (request.resource.data.type != 'SONDERURLAUB'
-          || (request.resource.data.status == 'APPROVED'
-            && request.resource.data.adminUid == request.auth.uid));
-      allow update: if isAdminUser()
-        && isValidAbsenceType(request.resource.data)
-        && isValidSpecialLeave(request.resource.data);
-      allow delete: if isAdminUser();
+      // All mutations pass through Functions which enforce state transitions,
+      // month locks, special-leave validation and the matching audit entry.
+      allow create, update, delete: if false;
     }
 
     match /vacation_balances/{balanceId} {
       // Employees receive only their own balance through a Cloud Function.
       allow read: if isAdminUser();
-      allow write: if isAdminUser();
+      allow write: if canWriteAdminData();
     }
 
     match /public_holidays/{holidayId} {
       allow read: if isSignedIn();
-      allow write: if isAdminUser();
+      allow write: if canWriteAdminData();
     }
 
     // Employee profiles (personal data)
     match /employee_profiles/{profileId} {
-      allow read, write: if isAdminUser();
+      allow read: if isAdminUser();
+      allow write: if canWriteAdminData();
     }
 
     // Onboarding requests — public access only with the exact token (= doc ID).
@@ -113,32 +99,19 @@ service cloud.firestore {
     match /onboarding_requests/{requestId} {
       allow get: if true;
       allow list: if isAdminUser();
-      allow create: if isAdminUser();
-      // Public submit: may only fill profileData and set status to SUBMITTED.
-      allow update: if isAdminUser()
-        || (request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['profileData', 'status', 'submittedAt'])
-            && request.resource.data.status == 'SUBMITTED');
-      allow delete: if isAdminUser();
+      allow create, update, delete: if canWriteAdminData();
     }
 
     // Sign requests — public access only with the exact token (= doc ID).
     match /sign_requests/{requestId} {
       allow get: if true;
       allow list: if isAdminUser();
-      allow create: if isAdminUser();
-      // Public signing: one-time, only the signature fields, status must become SIGNED.
-      allow update: if isAdminUser()
-        || (resource.data.status != 'SIGNED'
-            && request.resource.data.diff(resource.data).affectedKeys()
-                .hasOnly(['status', 'signatureDataUrl', 'signedAt'])
-            && request.resource.data.status == 'SIGNED');
-      allow delete: if isAdminUser();
+      allow create, update, delete: if canWriteAdminData();
     }
 
     // Email trigger (Firebase Extension reads this)
     match /mail/{mailId} {
-      allow create: if isAdminUser();
+      allow create: if canWriteAdminData();
       allow read, update, delete: if false;
     }
 

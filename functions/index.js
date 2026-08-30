@@ -9,6 +9,14 @@ const {
   normalizePunchRequestId,
   punchEventDocumentId,
 } = require("./punch_request");
+const {
+  sanitizeOnboardingProfile,
+  validateSignatureDataUrl,
+} = require("./public_submission");
+const {
+  isAbsenceTransitionAllowed,
+  monthKeysForRange,
+} = require("./month_lock");
 
 admin.initializeApp();
 
@@ -20,6 +28,10 @@ const MAX_LOGIN_ATTEMPTS = 8;
 const BERLIN_TIME_ZONE = "Europe/Berlin";
 const ALLOWED_EVENT_TYPES = new Set(["IN", "OUT", "BREAK_START", "BREAK_END"]);
 const DAY_PARTS = new Set(["FULL", "MORNING", "AFTERNOON"]);
+const SPECIAL_LEAVE_CATEGORIES = new Set(["HOCHZEIT", "TRAUERFALL", "GEBURT", "UMZUG", "SONSTIGES"]);
+const ADMIN_ROLES = new Set(["superadmin", "admin", "viewer"]);
+const WRITE_ADMIN_ROLES = new Set(["superadmin", "admin"]);
+const SUPERADMIN_ROLES = new Set(["superadmin"]);
 
 function ensureSignedIn(request) {
   if (!request.auth) {
@@ -341,53 +353,54 @@ exports.createEmployeeVacationRequest = onCall({region: REGION}, async (request)
     throw new HttpsError("invalid-argument", "Der Zeitraum enthält keine Arbeitstage.");
   }
 
-  const existingSnap = await db.collection("absences")
-      .where("employeeId", "==", employeeId).get();
-  const overlaps = existingSnap.docs.some((doc) => {
-    const data = doc.data() || {};
-    if (!["PENDING", "APPROVED"].includes(String(data.status || ""))) return false;
-    return String(data.startDate || "") <= range.endDate &&
-      String(data.endDate || "") >= range.startDate;
-  });
-  if (overlaps) {
-    throw new HttpsError("already-exists", "Für diesen Zeitraum besteht bereits eine Abwesenheit.");
-  }
-
   const absenceRef = db.collection("absences").doc();
   const auditRef = db.collection("audit").doc();
-  const batch = db.batch();
-  batch.set(absenceRef, {
-    employeeId,
-    type: "URLAUB",
-    startDate: range.startDate,
-    endDate: range.endDate,
-    startDayPart: range.startDayPart,
-    endDayPart: range.endDayPart,
-    status: "PENDING",
-    vacationDaysConsumed: consumedDays,
-    reason: null,
-    createdByEmployee: true,
-    adminUid: null,
-    approvedBy: null,
-    approvedAt: null,
-    rejectionReason: null,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  await db.runTransaction(async (transaction) => {
+    await assertMonthsOpen(transaction, employeeId, range.startDate, range.endDate);
+    const existing = await transaction.get(
+        db.collection("absences").where("employeeId", "==", employeeId),
+    );
+    const overlaps = existing.docs.some((doc) => {
+      const data = doc.data() || {};
+      if (!["PENDING", "APPROVED"].includes(String(data.status || ""))) return false;
+      return String(data.startDate || "") <= range.endDate &&
+        String(data.endDate || "") >= range.startDate;
+    });
+    if (overlaps) {
+      throw new HttpsError("already-exists", "Für diesen Zeitraum besteht bereits eine Abwesenheit.");
+    }
 
-  batch.set(auditRef, {
-    action: "VACATION_REQUESTED_BY_EMPLOYEE",
-    employeeId,
-    absenceId: absenceRef.id,
-    startDate: range.startDate,
-    endDate: range.endDate,
-    startDayPart: range.startDayPart,
-    endDayPart: range.endDayPart,
-    vacationDaysConsumed: consumedDays,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    transaction.create(absenceRef, {
+      employeeId,
+      type: "URLAUB",
+      startDate: range.startDate,
+      endDate: range.endDate,
+      startDayPart: range.startDayPart,
+      endDayPart: range.endDayPart,
+      status: "PENDING",
+      vacationDaysConsumed: consumedDays,
+      reason: null,
+      createdByEmployee: true,
+      adminUid: null,
+      approvedBy: null,
+      approvedAt: null,
+      rejectionReason: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    transaction.create(auditRef, {
+      action: "VACATION_REQUESTED_BY_EMPLOYEE",
+      employeeId,
+      absenceId: absenceRef.id,
+      startDate: range.startDate,
+      endDate: range.endDate,
+      startDayPart: range.startDayPart,
+      endDayPart: range.endDayPart,
+      vacationDaysConsumed: consumedDays,
+      createdAt: timestamp,
+    });
   });
-
-  await batch.commit();
 
   await sessionRef.delete().catch(() => {});
 
@@ -458,20 +471,359 @@ exports.getEmployeeVacationOverview = onCall({region: REGION}, async (request) =
   };
 });
 
+// ── Public one-time submissions ──
+
+function publicRequestId(value) {
+  const requestId = String(value || "").trim();
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId)) {
+    throw new HttpsError("invalid-argument", "Ungültiger Link.");
+  }
+  return requestId;
+}
+
+exports.submitOnboardingRequest = onCall({region: REGION}, async (request) => {
+  const requestId = publicRequestId(request.data?.requestId);
+  let profileData;
+  try {
+    profileData = sanitizeOnboardingProfile(request.data?.profileData);
+  } catch (err) {
+    logger.warn("Invalid public onboarding submission", {requestId, error: err.message});
+    throw new HttpsError("invalid-argument", "Die eingegebenen Daten sind ungültig.");
+  }
+
+  const requestRef = db.collection("onboarding_requests").doc(requestId);
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(requestRef);
+    if (!snapshot.exists) {
+      throw new HttpsError("not-found", "Der Einladungslink ist ungültig.");
+    }
+    if (snapshot.data()?.status !== "ONBOARDING") {
+      throw new HttpsError("failed-precondition", "Diese Einladung wurde bereits verwendet.");
+    }
+    transaction.update(requestRef, {
+      profileData,
+      status: "SUBMITTED",
+      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  return {success: true};
+});
+
+exports.signTimesheet = onCall({region: REGION}, async (request) => {
+  const requestId = publicRequestId(request.data?.requestId);
+  let signatureDataUrl;
+  try {
+    signatureDataUrl = validateSignatureDataUrl(request.data?.signatureDataUrl);
+  } catch (err) {
+    logger.warn("Invalid public signature submission", {requestId, error: err.message});
+    throw new HttpsError("invalid-argument", "Die Unterschrift ist ungültig oder zu groß.");
+  }
+
+  const requestRef = db.collection("sign_requests").doc(requestId);
+  const auditRef = db.collection("audit").doc();
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(requestRef);
+    if (!snapshot.exists) {
+      throw new HttpsError("not-found", "Der Unterschriftslink ist ungültig.");
+    }
+    const data = snapshot.data() || {};
+    if (data.status !== "PENDING") {
+      throw new HttpsError("failed-precondition", "Dieser Nachweis wurde bereits unterschrieben.");
+    }
+
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    transaction.update(requestRef, {
+      status: "SIGNED",
+      signatureDataUrl,
+      signedAt: timestamp,
+    });
+    transaction.create(auditRef, {
+      action: "TIMESHEET_SIGNED_BY_EMPLOYEE",
+      employeeId: data.employeeId || null,
+      yearMonth: data.yearMonth || null,
+      employeeName: data.employeeName || null,
+      signRequestId: requestId,
+      createdAt: timestamp,
+    });
+  });
+
+  return {success: true};
+});
+
 // ── Admin user management ──
 
-async function ensureAdmin(request) {
+async function ensureAdmin(request, allowedRoles = ADMIN_ROLES) {
   ensureSignedIn(request);
   const uid = request.auth.uid;
-  // Check if caller is in admins collection
   const adminDoc = await db.collection("admins").doc(uid).get();
   if (!adminDoc.exists || adminDoc.data()?.active !== true) {
     throw new HttpsError("permission-denied", "Nur Admins dürfen diese Aktion ausführen.");
   }
+  const role = String(adminDoc.data()?.role || "admin");
+  if (!allowedRoles.has(role)) {
+    throw new HttpsError("permission-denied", "Für diese Aktion fehlen die Berechtigungen.");
+  }
+  return {uid, role, data: adminDoc.data()};
 }
 
+function optionalUtcMs(value, fieldName, dayKey) {
+  if (value === null || value === undefined || value === "") return null;
+  const result = Number(value);
+  if (!Number.isFinite(result) || result <= 0 || dayKeyBerlinFromUtcMs(result) !== dayKey) {
+    throw new HttpsError("invalid-argument", `${fieldName} ist ungültig.`);
+  }
+  return result;
+}
+
+async function assertMonthsOpen(transaction, employeeId, startDate, endDate) {
+  let monthKeys;
+  try {
+    monthKeys = monthKeysForRange(startDate, endDate);
+  } catch {
+    throw new HttpsError("invalid-argument", "Der Abwesenheitszeitraum ist ungültig oder zu lang.");
+  }
+  const refs = monthKeys.map((yearMonth) =>
+    db.collection("month_approvals").doc(`${employeeId}_${yearMonth}`),
+  );
+  const approvals = await Promise.all(refs.map((ref) => transaction.get(ref)));
+  if (approvals.some((snapshot) => snapshot.exists)) {
+    throw new HttpsError("failed-precondition", "Mindestens ein betroffener Monat ist freigegeben. Bitte zuerst die Freigabe zurücknehmen.");
+  }
+}
+
+exports.setDayOverride = onCall({region: REGION}, async (request) => {
+  const actor = await ensureAdmin(request, WRITE_ADMIN_ROLES);
+  const employeeId = normalizeEmployeeId(request.data?.employeeId);
+  const dayKey = String(request.data?.dayKey || "");
+  const reason = String(request.data?.reason || "").trim();
+  if (!employeeId || !isValidDayKey(dayKey) || !reason || reason.length > 1000) {
+    throw new HttpsError("invalid-argument", "Mitarbeiter, Datum oder Grund ist ungültig.");
+  }
+
+  const inUtcMs = optionalUtcMs(request.data?.inUtcMs, "Kommen", dayKey);
+  const outUtcMs = optionalUtcMs(request.data?.outUtcMs, "Gehen", dayKey);
+  const breakStartUtcMs = optionalUtcMs(request.data?.breakStartUtcMs, "Pausenbeginn", dayKey);
+  const breakEndUtcMs = optionalUtcMs(request.data?.breakEndUtcMs, "Pausenende", dayKey);
+  if (inUtcMs && outUtcMs && outUtcMs <= inUtcMs) {
+    throw new HttpsError("invalid-argument", "Gehen muss nach Kommen sein.");
+  }
+  if (breakStartUtcMs && breakEndUtcMs && breakEndUtcMs <= breakStartUtcMs) {
+    throw new HttpsError("invalid-argument", "Pausenende muss nach Pausenbeginn sein.");
+  }
+
+  const yearMonth = dayKey.slice(0, 7);
+  const overrideRef = db.collection("day_overrides").doc(`${employeeId}_${dayKey}`);
+  const approvalRef = db.collection("month_approvals").doc(`${employeeId}_${yearMonth}`);
+  const auditRef = db.collection("audit").doc();
+  await db.runTransaction(async (transaction) => {
+    const approval = await transaction.get(approvalRef);
+    if (approval.exists) {
+      throw new HttpsError("failed-precondition", "Der Monat ist freigegeben. Bitte zuerst die Freigabe zurücknehmen.");
+    }
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    transaction.set(overrideRef, {
+      employeeId,
+      dayKey,
+      yearMonth,
+      reason,
+      adminUid: actor.uid,
+      inUtcMs,
+      outUtcMs,
+      breakStartUtcMs,
+      breakEndUtcMs,
+      updatedAt: timestamp,
+    });
+    transaction.create(auditRef, {
+      action: "DAY_OVERRIDE_SET",
+      employeeId,
+      dayKey,
+      reason,
+      adminUid: actor.uid,
+      adminEmail: request.auth.token.email || null,
+      createdAt: timestamp,
+    });
+  });
+
+  return {
+    success: true,
+    override: {employeeId, dayKey, yearMonth, reason, inUtcMs, outUtcMs, breakStartUtcMs, breakEndUtcMs},
+  };
+});
+
+exports.deleteDayOverride = onCall({region: REGION}, async (request) => {
+  const actor = await ensureAdmin(request, WRITE_ADMIN_ROLES);
+  const employeeId = normalizeEmployeeId(request.data?.employeeId);
+  const dayKey = String(request.data?.dayKey || "");
+  if (!employeeId || !isValidDayKey(dayKey)) {
+    throw new HttpsError("invalid-argument", "Mitarbeiter oder Datum ist ungültig.");
+  }
+
+  const yearMonth = dayKey.slice(0, 7);
+  const overrideRef = db.collection("day_overrides").doc(`${employeeId}_${dayKey}`);
+  const approvalRef = db.collection("month_approvals").doc(`${employeeId}_${yearMonth}`);
+  const auditRef = db.collection("audit").doc();
+  await db.runTransaction(async (transaction) => {
+    const [approval, override] = await Promise.all([
+      transaction.get(approvalRef),
+      transaction.get(overrideRef),
+    ]);
+    if (approval.exists) {
+      throw new HttpsError("failed-precondition", "Der Monat ist freigegeben. Bitte zuerst die Freigabe zurücknehmen.");
+    }
+    if (!override.exists) return;
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    transaction.delete(overrideRef);
+    transaction.create(auditRef, {
+      action: "DAY_OVERRIDE_DELETED",
+      employeeId,
+      dayKey,
+      adminUid: actor.uid,
+      adminEmail: request.auth.token.email || null,
+      createdAt: timestamp,
+    });
+  });
+
+  return {success: true};
+});
+
+exports.createAdminAbsence = onCall({region: REGION}, async (request) => {
+  const actor = await ensureAdmin(request, WRITE_ADMIN_ROLES);
+  const employeeId = normalizeEmployeeId(request.data?.employeeId);
+  if (!employeeId) {
+    throw new HttpsError("invalid-argument", "Mitarbeiter fehlt.");
+  }
+  const range = validateAbsenceRange(request.data);
+  const dayPart = range.startDate === range.endDate ? range.startDayPart : null;
+  const consumedDays = calculateAbsenceDays(range);
+  if (consumedDays <= 0) {
+    throw new HttpsError("invalid-argument", "Der Zeitraum enthält keine Arbeitstage.");
+  }
+  const specialLeaveCategory = range.type === "SONDERURLAUB" ?
+    String(request.data?.specialLeaveCategory || "") : null;
+  if (range.type === "SONDERURLAUB" && !SPECIAL_LEAVE_CATEGORIES.has(specialLeaveCategory)) {
+    throw new HttpsError("invalid-argument", "Anlass für Sonderurlaub ist ungültig.");
+  }
+  const reason = String(request.data?.reason || "").trim().slice(0, 2000) || null;
+  const isApproved = range.type === "SONDERURLAUB" || request.data?.autoApprove === true;
+  const absenceRef = db.collection("absences").doc();
+  const auditRef = db.collection("audit").doc();
+
+  await db.runTransaction(async (transaction) => {
+    const employee = await transaction.get(db.collection("employees").doc(employeeId));
+    if (!employee.exists) {
+      throw new HttpsError("not-found", "Mitarbeiter nicht gefunden.");
+    }
+    await assertMonthsOpen(transaction, employeeId, range.startDate, range.endDate);
+    const existing = await transaction.get(
+        db.collection("absences").where("employeeId", "==", employeeId),
+    );
+    const overlaps = existing.docs.some((doc) => {
+      const data = doc.data() || {};
+      return ["PENDING", "APPROVED"].includes(String(data.status || "")) &&
+        String(data.startDate || "") <= range.endDate &&
+        String(data.endDate || "") >= range.startDate;
+    });
+    if (overlaps) {
+      throw new HttpsError("already-exists", "Für diesen Zeitraum besteht bereits eine Abwesenheit.");
+    }
+
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    transaction.create(absenceRef, {
+      employeeId,
+      type: range.type,
+      startDate: range.startDate,
+      endDate: range.endDate,
+      startDayPart: range.startDayPart,
+      endDayPart: range.endDayPart,
+      status: isApproved ? "APPROVED" : "PENDING",
+      vacationDaysConsumed: consumedDays,
+      specialLeaveCategory,
+      reason,
+      createdByEmployee: false,
+      adminUid: actor.uid,
+      approvedBy: isApproved ? (request.auth.token.email || "Admin") : null,
+      approvedAt: isApproved ? timestamp : null,
+      rejectionReason: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    transaction.create(auditRef, {
+      action: range.type === "SONDERURLAUB" ? "SPECIAL_LEAVE_GRANTED" : "ABSENCE_CREATED",
+      absenceId: absenceRef.id,
+      employeeId,
+      adminUid: actor.uid,
+      adminEmail: request.auth.token.email || null,
+      createdAt: timestamp,
+      payload: {
+        type: range.type,
+        startDate: range.startDate,
+        endDate: range.endDate,
+        dayPart,
+        workDays: consumedDays,
+        specialLeaveCategory,
+      },
+    });
+  });
+
+  return {success: true, absenceId: absenceRef.id, vacationDaysConsumed: consumedDays};
+});
+
+exports.updateAdminAbsenceStatus = onCall({region: REGION}, async (request) => {
+  const actor = await ensureAdmin(request, WRITE_ADMIN_ROLES);
+  const absenceId = String(request.data?.absenceId || "").trim();
+  const nextStatus = String(request.data?.status || "").trim();
+  const rejectionReason = String(request.data?.rejectionReason || "").trim().slice(0, 2000) || null;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(absenceId) || !["APPROVED", "REJECTED", "CANCELLED"].includes(nextStatus)) {
+    throw new HttpsError("invalid-argument", "Abwesenheit oder Status ist ungültig.");
+  }
+
+  const absenceRef = db.collection("absences").doc(absenceId);
+  const auditRef = db.collection("audit").doc();
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(absenceRef);
+    if (!snapshot.exists) {
+      throw new HttpsError("not-found", "Abwesenheit nicht gefunden.");
+    }
+    const data = snapshot.data() || {};
+    const currentStatus = String(data.status || "");
+    if (!isAbsenceTransitionAllowed(currentStatus, nextStatus)) {
+      throw new HttpsError("failed-precondition", "Diese Statusänderung ist nicht zulässig.");
+    }
+    await assertMonthsOpen(transaction, String(data.employeeId || ""), String(data.startDate || ""), String(data.endDate || ""));
+
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const update = {
+      status: nextStatus,
+      updatedAt: timestamp,
+    };
+    if (nextStatus === "APPROVED") {
+      update.approvedBy = request.auth.token.email || "Admin";
+      update.approvedAt = timestamp;
+      update.rejectionReason = null;
+    } else if (nextStatus === "REJECTED") {
+      update.rejectionReason = rejectionReason;
+    }
+    transaction.update(absenceRef, update);
+
+    const action = nextStatus === "APPROVED" ? "ABSENCE_APPROVED" :
+      nextStatus === "REJECTED" ? "ABSENCE_REJECTED" : "ABSENCE_CANCELLED";
+    transaction.create(auditRef, {
+      action,
+      absenceId,
+      employeeId: data.employeeId || null,
+      rejectionReason: nextStatus === "REJECTED" ? rejectionReason : null,
+      adminUid: actor.uid,
+      adminEmail: request.auth.token.email || null,
+      createdAt: timestamp,
+    });
+  });
+
+  return {success: true};
+});
+
 exports.createAdminUser = onCall({region: REGION}, async (request) => {
-  await ensureAdmin(request);
+  await ensureAdmin(request, SUPERADMIN_ROLES);
 
   const email = String(request.data?.email || "").trim().toLowerCase();
   const password = String(request.data?.password || "");
@@ -487,17 +839,22 @@ exports.createAdminUser = onCall({region: REGION}, async (request) => {
   if (!displayName) {
     throw new HttpsError("invalid-argument", "Name ist erforderlich.");
   }
+  if (!ADMIN_ROLES.has(role)) {
+    throw new HttpsError("invalid-argument", "Ungültige Rolle.");
+  }
 
+  let userRecord = null;
   try {
-    // Create Firebase Auth user
-    const userRecord = await admin.auth().createUser({
+    userRecord = await admin.auth().createUser({
       email,
       password,
       displayName,
     });
 
-    // Store in admins collection
-    await db.collection("admins").doc(userRecord.uid).set({
+    const adminRef = db.collection("admins").doc(userRecord.uid);
+    const auditRef = db.collection("audit").doc();
+    const batch = db.batch();
+    batch.set(adminRef, {
       uid: userRecord.uid,
       email,
       displayName,
@@ -507,16 +864,17 @@ exports.createAdminUser = onCall({region: REGION}, async (request) => {
       createdByEmail: request.auth.token.email || null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-
-    // Audit log
-    await db.collection("audit").add({
+    batch.create(auditRef, {
       action: "ADMIN_CREATED",
+      targetUid: userRecord.uid,
       targetEmail: email,
       targetDisplayName: displayName,
+      targetRole: role,
       adminUid: request.auth.uid,
       adminEmail: request.auth.token.email || null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+    await batch.commit();
 
     return {
       uid: userRecord.uid,
@@ -527,28 +885,69 @@ exports.createAdminUser = onCall({region: REGION}, async (request) => {
     if (err.code === "auth/email-already-exists") {
       throw new HttpsError("already-exists", "Ein Benutzer mit dieser E-Mail existiert bereits.");
     }
+    if (userRecord) {
+      try {
+        await admin.auth().deleteUser(userRecord.uid);
+      } catch (rollbackError) {
+        logger.error("Failed to roll back admin Auth user", {
+          uid: userRecord.uid,
+          error: rollbackError.message,
+        });
+      }
+    }
+    if (err instanceof HttpsError) throw err;
     throw new HttpsError("internal", err.message || "Admin konnte nicht erstellt werden.");
   }
 });
 
 exports.updateAdminUser = onCall({region: REGION}, async (request) => {
-  await ensureAdmin(request);
+  await ensureAdmin(request, SUPERADMIN_ROLES);
 
   const targetUid = String(request.data?.uid || "").trim();
   const displayName = request.data?.displayName !== undefined ? String(request.data.displayName).trim() : null;
-  const active = request.data?.active !== undefined ? request.data.active === true : null;
+  const active = request.data?.active !== undefined ? request.data.active : null;
   const newPassword = request.data?.newPassword ? String(request.data.newPassword) : null;
   const role = request.data?.role !== undefined ? String(request.data.role).trim() : null;
 
   if (!targetUid) {
     throw new HttpsError("invalid-argument", "User-ID fehlt.");
   }
+  if (active !== null && typeof active !== "boolean") {
+    throw new HttpsError("invalid-argument", "Ungültiger Aktiv-Status.");
+  }
+  if (role !== null && !ADMIN_ROLES.has(role)) {
+    throw new HttpsError("invalid-argument", "Ungültige Rolle.");
+  }
+  if (newPassword && newPassword.length < 6) {
+    throw new HttpsError("invalid-argument", "Passwort muss mindestens 6 Zeichen haben.");
+  }
+  if (targetUid === request.auth.uid && active === false) {
+    throw new HttpsError("failed-precondition", "Das eigene Konto kann nicht deaktiviert werden.");
+  }
+  if (targetUid === request.auth.uid && role !== null && role !== "superadmin") {
+    throw new HttpsError("failed-precondition", "Die eigene Superadmin-Rolle kann nicht entfernt werden.");
+  }
 
   try {
-    // Update Auth user if needed
+    const targetRef = db.collection("admins").doc(targetUid);
+    const targetSnapshot = await targetRef.get();
+    if (!targetSnapshot.exists) {
+      throw new HttpsError("not-found", "Admin-Konto nicht gefunden.");
+    }
+    const targetData = targetSnapshot.data() || {};
+    const removesSuperAdmin = targetData.role === "superadmin" &&
+      (active === false || (role !== null && role !== "superadmin"));
+    if (removesSuperAdmin) {
+      const superAdmins = await db.collection("admins").where("role", "==", "superadmin").get();
+      const activeSuperAdmins = superAdmins.docs.filter((doc) => doc.data()?.active === true);
+      if (activeSuperAdmins.length <= 1) {
+        throw new HttpsError("failed-precondition", "Mindestens ein aktiver Superadmin muss erhalten bleiben.");
+      }
+    }
+
     const authUpdate = {};
     if (displayName) authUpdate.displayName = displayName;
-    if (newPassword && newPassword.length >= 6) authUpdate.password = newPassword;
+    if (newPassword) authUpdate.password = newPassword;
     if (active === false) authUpdate.disabled = true;
     if (active === true) authUpdate.disabled = false;
 
@@ -556,16 +955,15 @@ exports.updateAdminUser = onCall({region: REGION}, async (request) => {
       await admin.auth().updateUser(targetUid, authUpdate);
     }
 
-    // Update Firestore
     const fsUpdate = {updatedAt: admin.firestore.FieldValue.serverTimestamp()};
     if (displayName) fsUpdate.displayName = displayName;
     if (active !== null) fsUpdate.active = active;
     if (role) fsUpdate.role = role;
 
-    await db.collection("admins").doc(targetUid).update(fsUpdate);
-
-    // Audit
-    await db.collection("audit").add({
+    const auditRef = db.collection("audit").doc();
+    const batch = db.batch();
+    batch.update(targetRef, fsUpdate);
+    batch.create(auditRef, {
       action: "ADMIN_UPDATED",
       targetUid,
       changes: Object.keys(fsUpdate).filter((k) => k !== "updatedAt"),
@@ -573,9 +971,11 @@ exports.updateAdminUser = onCall({region: REGION}, async (request) => {
       adminEmail: request.auth.token.email || null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+    await batch.commit();
 
     return {success: true};
   } catch (err) {
+    if (err instanceof HttpsError) throw err;
     throw new HttpsError("internal", err.message || "Admin konnte nicht aktualisiert werden.");
   }
 });
@@ -803,7 +1203,7 @@ exports.onAbsenceWritten = onDocumentWritten(
     });
 
 exports.recalculateAllVacationBalances = onCall({region: REGION}, async (request) => {
-  await ensureAdmin(request);
+  await ensureAdmin(request, WRITE_ADMIN_ROLES);
 
   const year = Number(request.data?.year || new Date().getFullYear());
   const empSnap = await db.collection("employees").get();
