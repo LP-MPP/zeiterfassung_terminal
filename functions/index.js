@@ -3,9 +3,12 @@ const {initializeApp} = require("firebase-admin/app");
 const {getAuth} = require("firebase-admin/auth");
 const {FieldValue, getFirestore} = require("firebase-admin/firestore");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
-const {onDocumentWritten} = require("firebase-functions/v2/firestore");
+const {onDocumentCreated, onDocumentWritten} = require("firebase-functions/v2/firestore");
+const {defineSecret} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const {addAbsenceToBalance} = require("./absence_balance");
+const {buildApprovalEmail, shouldNotifyApproval} = require("./absence_email");
+const {normalizeEmail, sendGraphEmail} = require("./graph_mail");
 const {preparePunchNote} = require("./punch_note");
 const {
   normalizePunchRequestId,
@@ -35,6 +38,10 @@ const SPECIAL_LEAVE_CATEGORIES = new Set(["HOCHZEIT", "TRAUERFALL", "GEBURT", "U
 const ADMIN_ROLES = new Set(["superadmin", "admin", "viewer"]);
 const WRITE_ADMIN_ROLES = new Set(["superadmin", "admin"]);
 const SUPERADMIN_ROLES = new Set(["superadmin"]);
+const MS_GRAPH_CLIENT_SECRET = defineSecret("MS_GRAPH_CLIENT_SECRET");
+const MS_GRAPH_TENANT_ID = "cf421be2-a9d5-48e5-baac-e2c17f17eaf3";
+const MS_GRAPH_CLIENT_ID = "48dc5957-a552-4271-895b-0512211851ca";
+const MS_GRAPH_SENDER = "no-reply@mpp-solutions.com";
 
 function ensureSignedIn(request) {
   if (!request.auth) {
@@ -731,6 +738,27 @@ exports.deleteDayOverride = onCall({region: REGION}, async (request) => {
   return {success: true};
 });
 
+function queueApprovalEmail(transaction, absenceId, absence, actor, timestamp) {
+  if (!shouldNotifyApproval(absence)) return;
+
+  const jobRef = db.collection("absence_email_jobs").doc(`approved_${absenceId}`);
+  transaction.create(jobRef, {
+    absenceId,
+    employeeId: String(absence.employeeId || ""),
+    type: String(absence.type || ""),
+    startDate: String(absence.startDate || ""),
+    endDate: String(absence.endDate || ""),
+    startDayPart: normalizeDayPart(absence.startDayPart),
+    endDayPart: normalizeDayPart(absence.endDayPart),
+    vacationDaysConsumed: Number(absence.vacationDaysConsumed || 0),
+    status: "PENDING",
+    attempts: 0,
+    adminUid: actor.uid,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+}
+
 exports.createAdminAbsence = onCall({region: REGION}, async (request) => {
   const actor = await ensureAdmin(request, WRITE_ADMIN_ROLES);
   const employeeId = normalizeEmployeeId(request.data?.employeeId);
@@ -773,7 +801,7 @@ exports.createAdminAbsence = onCall({region: REGION}, async (request) => {
     }
 
     const timestamp = FieldValue.serverTimestamp();
-    transaction.create(absenceRef, {
+    const absence = {
       employeeId,
       type: range.type,
       startDate: range.startDate,
@@ -791,7 +819,9 @@ exports.createAdminAbsence = onCall({region: REGION}, async (request) => {
       rejectionReason: null,
       createdAt: timestamp,
       updatedAt: timestamp,
-    });
+    };
+    transaction.create(absenceRef, absence);
+    queueApprovalEmail(transaction, absenceRef.id, absence, actor, timestamp);
     transaction.create(auditRef, {
       action: range.type === "SONDERURLAUB" ? "SPECIAL_LEAVE_GRANTED" : "ABSENCE_CREATED",
       absenceId: absenceRef.id,
@@ -849,6 +879,15 @@ exports.updateAdminAbsenceStatus = onCall({region: REGION}, async (request) => {
       update.rejectionReason = rejectionReason;
     }
     transaction.update(absenceRef, update);
+    if (nextStatus === "APPROVED") {
+      queueApprovalEmail(
+          transaction,
+          absenceId,
+          {...data, ...update, status: "APPROVED"},
+          actor,
+          timestamp,
+      );
+    }
 
     const action = nextStatus === "APPROVED" ? "ABSENCE_APPROVED" :
       nextStatus === "REJECTED" ? "ABSENCE_REJECTED" : "ABSENCE_CANCELLED";
@@ -865,6 +904,97 @@ exports.updateAdminAbsenceStatus = onCall({region: REGION}, async (request) => {
 
   return {success: true};
 });
+
+exports.onAbsenceApprovalEmailJobCreated = onDocumentCreated(
+    {
+      region: REGION,
+      document: "absence_email_jobs/{jobId}",
+      secrets: [MS_GRAPH_CLIENT_SECRET],
+      retry: false,
+    },
+    async (event) => {
+      if (!event.data) return;
+      const jobRef = event.data.ref;
+      const job = await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(jobRef);
+        if (!snapshot.exists) return null;
+        const data = snapshot.data() || {};
+        if (String(data.status || "") !== "PENDING") return null;
+        transaction.update(jobRef, {
+          status: "PROCESSING",
+          attempts: FieldValue.increment(1),
+          processingStartedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        return data;
+      });
+      if (!job) return;
+
+      try {
+        const employeeId = normalizeEmployeeId(job.employeeId);
+        const [profileSnapshot, employeeSnapshot] = await Promise.all([
+          db.collection("employee_profiles").doc(employeeId).get(),
+          db.collection("employees").doc(employeeId).get(),
+        ]);
+        const profile = profileSnapshot.data() || {};
+        const employee = employeeSnapshot.data() || {};
+        const recipient = normalizeEmail(profile.email);
+        if (!recipient) {
+          await jobRef.update({
+            status: "SKIPPED_NO_EMAIL",
+            completedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          logger.info("Approval email skipped because no valid employee email is stored.", {
+            jobId: event.params.jobId,
+            absenceId: job.absenceId || null,
+            employeeId,
+          });
+          return;
+        }
+
+        const profileName = `${String(profile.firstName || "").trim()} ${String(profile.lastName || "").trim()}`.trim();
+        const message = buildApprovalEmail({
+          ...job,
+          employeeName: profileName || String(employee.name || "").trim(),
+        });
+        await sendGraphEmail({
+          tenantId: MS_GRAPH_TENANT_ID,
+          clientId: MS_GRAPH_CLIENT_ID,
+          clientSecret: MS_GRAPH_CLIENT_SECRET.value(),
+          sender: MS_GRAPH_SENDER,
+          to: recipient,
+          subject: message.subject,
+          html: message.html,
+        });
+
+        await jobRef.update({
+          status: "SENT",
+          sentAt: FieldValue.serverTimestamp(),
+          completedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        logger.info("Approval email sent.", {
+          jobId: event.params.jobId,
+          absenceId: job.absenceId || null,
+          employeeId,
+        });
+      } catch (error) {
+        const safeMessage = String(error?.message || "Unbekannter Versandfehler.").slice(0, 500);
+        await jobRef.update({
+          status: "FAILED",
+          lastError: safeMessage,
+          completedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        }).catch(() => {});
+        logger.error("Approval email failed.", {
+          jobId: event.params.jobId,
+          absenceId: job.absenceId || null,
+          error: safeMessage,
+        });
+      }
+    },
+);
 
 exports.createAdminUser = onCall({region: REGION}, async (request) => {
   await ensureAdmin(request, SUPERADMIN_ROLES);
