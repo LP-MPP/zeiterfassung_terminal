@@ -8,6 +8,7 @@ const {defineSecret} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const {addAbsenceToBalance} = require("./absence_balance");
 const {buildApprovalEmail, shouldNotifyApproval} = require("./absence_email");
+const {buildOnboardingEmail} = require("./onboarding_email");
 const {normalizeEmail, sendGraphEmail} = require("./graph_mail");
 const {preparePunchNote} = require("./punch_note");
 const {
@@ -15,6 +16,7 @@ const {
   punchEventDocumentId,
 } = require("./punch_request");
 const {
+  isMinorOnDate,
   sanitizeOnboardingProfile,
   validateSignatureDataUrl,
 } = require("./public_submission");
@@ -524,6 +526,31 @@ exports.getEmployeeVacationOverview = onCall({region: REGION}, async (request) =
 
 // ── Public one-time submissions ──
 
+const ONBOARDING_LINK_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+function onboardingExpiryMs(data) {
+  const explicit = data?.expiresAt?.toMillis?.();
+  if (Number.isFinite(explicit)) return explicit;
+  const created = data?.createdAt?.toMillis?.();
+  return Number.isFinite(created) ? created + ONBOARDING_LINK_TTL_MS : 0;
+}
+
+exports.getOnboardingRequest = onCall({region: REGION}, async (request) => {
+  const requestId = publicRequestId(request.data?.requestId);
+  const snapshot = await db.collection("onboarding_requests").doc(requestId).get();
+  if (!snapshot.exists) throw new HttpsError("not-found", "Der Einladungslink ist ungültig.");
+
+  const data = snapshot.data() || {};
+  const status = String(data.status || "ONBOARDING");
+  const expired = status === "ONBOARDING" && onboardingExpiryMs(data) <= Date.now();
+  return {
+    employeeName: String(data.employeeName || ""),
+    status: expired ? "EXPIRED" : status,
+    employmentType: String(data.employmentType || "MINIJOB"),
+    startDate: String(data.startDate || ""),
+  };
+});
+
 function publicRequestId(value) {
   const requestId = String(value || "").trim();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId)) {
@@ -551,10 +578,24 @@ exports.submitOnboardingRequest = onCall({region: REGION}, async (request) => {
     if (snapshot.data()?.status !== "ONBOARDING") {
       throw new HttpsError("failed-precondition", "Diese Einladung wurde bereits verwendet.");
     }
+    const invitation = snapshot.data() || {};
+    if (onboardingExpiryMs(invitation) <= Date.now()) {
+      throw new HttpsError("deadline-exceeded", "Diese Einladung ist abgelaufen.");
+    }
+    const startDate = String(invitation.startDate || profileData.startDate || "");
+    if (isMinorOnDate(profileData.birthDate, startDate) &&
+        (!profileData.legalRepresentativeName || !profileData.legalRepresentativeSignatureDataUrl)) {
+      throw new HttpsError("invalid-argument", "Bei Minderjährigen ist die Zustimmung der gesetzlichen Vertretung erforderlich.");
+    }
     transaction.update(requestRef, {
-      profileData,
+      profileData: {
+        ...profileData,
+        startDate,
+        confirmationDate: new Date().toISOString(),
+      },
       status: "SUBMITTED",
       submittedAt: FieldValue.serverTimestamp(),
+      tokenRevokedAt: FieldValue.serverTimestamp(),
     });
   });
 
@@ -992,6 +1033,63 @@ exports.onAbsenceApprovalEmailJobCreated = onDocumentCreated(
           absenceId: job.absenceId || null,
           error: safeMessage,
         });
+      }
+    },
+);
+
+exports.onOnboardingEmailJobCreated = onDocumentCreated(
+    {
+      region: REGION,
+      document: "onboarding_email_jobs/{jobId}",
+      secrets: [MS_GRAPH_CLIENT_SECRET],
+      retry: false,
+    },
+    async (event) => {
+      if (!event.data) return;
+      const jobRef = event.data.ref;
+      const job = await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(jobRef);
+        if (!snapshot.exists) return null;
+        const data = snapshot.data() || {};
+        if (String(data.status || "") !== "PENDING") return null;
+        transaction.update(jobRef, {
+          status: "PROCESSING",
+          attempts: FieldValue.increment(1),
+          processingStartedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        return data;
+      });
+      if (!job) return;
+
+      try {
+        const recipient = normalizeEmail(job.to);
+        if (!recipient) throw new Error("Onboarding recipient is invalid.");
+        const message = buildOnboardingEmail(job);
+        await sendGraphEmail({
+          tenantId: MS_GRAPH_TENANT_ID,
+          clientId: MS_GRAPH_CLIENT_ID,
+          clientSecret: MS_GRAPH_CLIENT_SECRET.value(),
+          sender: MS_GRAPH_SENDER,
+          to: recipient,
+          subject: message.subject,
+          html: message.html,
+        });
+        await jobRef.update({
+          status: "SENT",
+          sentAt: FieldValue.serverTimestamp(),
+          completedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      } catch (error) {
+        const safeMessage = String(error?.message || "Unbekannter Versandfehler.").slice(0, 500);
+        await jobRef.update({
+          status: "FAILED",
+          lastError: safeMessage,
+          completedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        }).catch(() => {});
+        logger.error("Onboarding email failed.", {jobId: event.params.jobId, error: safeMessage});
       }
     },
 );

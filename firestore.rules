@@ -94,11 +94,10 @@ service cloud.firestore {
       allow write: if canWriteAdminData();
     }
 
-    // Onboarding requests — public access only with the exact token (= doc ID).
-    // No list: prevents enumeration of submitted personal data.
+    // Public clients receive only minimal invitation metadata through a Function.
+    // Submitted personnel data is never readable through a bearer link.
     match /onboarding_requests/{requestId} {
-      allow get: if true;
-      allow list: if isAdminUser();
+      allow read: if isAdminUser();
       allow create, update, delete: if canWriteAdminData();
     }
 
@@ -111,6 +110,11 @@ service cloud.firestore {
 
     // Email trigger (Firebase Extension reads this)
     match /mail/{mailId} {
+      allow create: if canWriteAdminData();
+      allow read, update, delete: if false;
+    }
+
+    match /onboarding_email_jobs/{jobId} {
       allow create: if canWriteAdminData();
       allow read, update, delete: if false;
     }
