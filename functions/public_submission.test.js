@@ -111,6 +111,16 @@ test("requires job-seeker agency details", () => {
   })));
 });
 
+test("rejects pension exemption by status for a pupil", () => {
+  assert.throws(
+      () => sanitizeOnboardingProfile(validProfile({
+        employmentStatus: "PUPIL",
+        pensionInsuranceChoice: "EXEMPT_BY_STATUS",
+      })),
+      /PROFILE_PENSION_STATUS_CONFLICT/,
+  );
+});
+
 test("detects a minor at employment start", () => {
   assert.equal(isMinorOnDate("2010-09-02", "2026-09-01"), true);
   assert.equal(isMinorOnDate("2008-09-01", "2026-09-01"), false);

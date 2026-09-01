@@ -187,6 +187,11 @@ function sanitizeOnboardingProfile(value) {
   if (!ONBOARDING_EMPLOYMENT_STATUSES.has(result.employmentStatus)) throw new Error("PROFILE_EMPLOYMENT_STATUS_INVALID");
   if (!ONBOARDING_HEALTH_INSURANCE_TYPES.has(result.healthInsuranceType)) throw new Error("PROFILE_HEALTH_INSURANCE_INVALID");
   if (!ONBOARDING_PENSION_CHOICES.has(result.pensionInsuranceChoice)) throw new Error("PROFILE_PENSION_CHOICE_INVALID");
+  if (result.pensionInsuranceChoice === "EXEMPT_BY_STATUS" &&
+      result.employmentStatus !== "PENSIONER_AFTER_RETIREMENT_AGE" &&
+      result.employmentStatus !== "PENSION_RECIPIENT_AFTER_AGE") {
+    throw new Error("PROFILE_PENSION_STATUS_CONFLICT");
+  }
   if (result.employmentStatus === "JOB_SEEKER") {
     if (typeof result.employmentAgencyRegistered !== "boolean") throw new Error("PROFILE_AGENCY_DECLARATION_MISSING");
     if (result.employmentAgencyRegistered && (!result.employmentAgencyCity || typeof result.employmentAgencyReceivesBenefits !== "boolean")) {
